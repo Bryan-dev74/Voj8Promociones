@@ -31,7 +31,6 @@
     .toggle input::after{content:"";position:absolute;width:18px;height:18px;top:3px;left:3px;background:#fff;border-radius:999px;transition:.2s}
     .toggle input:checked::after{left:23px}
     .timer{font-variant-numeric:tabular-nums}
-    /* Estados deshabilitados visibles */
     .btn:disabled { opacity:.5; cursor:not-allowed; filter:grayscale(.7); transform:none; box-shadow:none; }
     .btn-gold:disabled { background:#9ca3af; color:#1a1a1a; }
   </style>
@@ -463,7 +462,7 @@
 
       if(state.activeGameLevel>0){
         const c=document.getElementById('game-content');
-        setupTimerForLevel(); // no se toca el tiempo
+        setupTimerForLevel(); // sin tocar el tiempo
         if(state.activeGameLevel===1) renderMultipleChoice(c);
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
@@ -511,8 +510,8 @@
       if(s<=10) el.classList.add('text-red-400'); else el.classList.remove('text-red-400');
     }
 
-    /* ========== NORMALIZACIÓN / COHERENCIA (mejorada) ========== */
-    const percentRe  = /^\d+([.,]\d+)?%$/i;   // 0,5% o 0.5%
+    /* ========== NORMALIZACIÓN / COHERENCIA (mejorada + sinónimos) ========== */
+    const percentRe  = /^\d+([.,]\d+)?%$/i;
     const rolloverRe = /^\d+\s*x$/i;
     const moneyRe    = /^r\$/i;
     const canonMap = [
@@ -525,19 +524,36 @@
       let s=String(t||'').trim().toLowerCase();
       s = s.normalize('NFD')
            .replace(/\p{Diacritic}/gu,'')
-           .replace(/[^\w%$x\s\.,@]/g,'') // permite coma y punto
+           .replace(/[^\w%$x\s\.,@-]/g,'') // permite guion para "e-mail" antes de normalizar
            .replace(/\s+/g,' ')
            .trim();
 
-      // Normalizaciones específicas
+      // Normalizaciones específicas previas
       if (/%$/.test(s)) s = s.replace(',', '.'); // 0,5% -> 0.5%
+      s = s.replace(/e-mail/g, 'email');         // e-mail -> email
 
+      // Sinónimos que unifican conceptos
+      if (s.includes('sin limite')) s = 'no hay limite';
+      if (
+        s.includes('pierden todos los bonos') ||
+        s.includes('pierdes todos los bonos') ||
+        (s.includes('evento se reinicia') && s.includes('bonos')) ||
+        (s.includes('check') && s.includes('reinicia') && s.includes('bonos'))
+      ){
+        s = 'pierdes todos los bonos';
+      }
+
+      // Mapeos canónicos predefinidos
       canonMap.forEach(([re,rep])=>{ if(re.test(s)) s=rep; });
 
-      if(percentRe.test(s)) return parseFloat(s);                         // "0.5%" -> 0.5
-      if(rolloverRe.test(s)) return parseFloat(s);                        // "15x"  -> 15
-      if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));    // "R$1.000" -> 1000
-      if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);                   // "10" -> 10
+      // Tipos numéricos
+      if(percentRe.test(s)) return parseFloat(s);                      // "0.5%" -> 0.5
+      if(rolloverRe.test(s)) return parseFloat(s);                     // "15x"  -> 15
+      if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,'')); // "R$1.000" -> 1000
+      if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);                // "10" -> 10
+
+      // Limpieza final
+      s = s.replace(/[^\w%$x\s\.,@]/g,'').trim(); // quitar el guion si quedó
       return s;
     }
     const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
@@ -552,7 +568,7 @@
       return out;
     }
 
-    /* ========== Distractores y construcción de opciones (robustecidos) ========== */
+    /* ========== Distractores/Construcción de opciones ========== */
     function closeMoneyOptions(correctInt){
       const deltas = [Math.round(correctInt*0.05), 50, 100, 200].map(Math.abs);
       const cand = new Set();
@@ -659,13 +675,11 @@
       render();
     }
 
-    /* --------- Util: igualdad canónica --------- */
-    function answersEqual(a,b){
-      try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); }
-    }
+    /* Utils igualdad */
+    function answersEqual(a,b){ try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); } }
     function stripIndexPrefix(s){ return String(s||'').replace(/^\s*\[\d\]\s*/,'').trim(); }
 
-    /* --------- Opción múltiple (+ hotkeys 1–4) --------- */
+    /* --------- Opción múltiple --------- */
     function renderMultipleChoice(container){
       const promo = promotionsData[state.activePromotionKey]||{};
       const questions = promo.questions||[];
@@ -682,7 +696,6 @@
         </div>
         <div id="mc-explain" role="alert" class="text-sm text-gray-400"></div>`;
 
-      // Hotkeys 1–4
       const handler = (e)=>{
         if(['1','2','3','4'].includes(e.key)){
           const btn = document.querySelector(`#mc-grid .option-btn[data-idx="${e.key}"]`);
@@ -699,7 +712,6 @@
       const qObj = promo.questions[currentQuestionIndex];
       const correct = qObj.answer;
 
-      // Tomo el texto real del botón por si el literal difiere
       const selectedFromBtn = stripIndexPrefix(button.innerText);
       const selected = selectedLiteral || selectedFromBtn;
 
@@ -731,7 +743,7 @@
       return `✅ Correcto: <b>${correct}</b>.`;
     }
 
-    /* --------- Flashcards (juego 5) corregido y estricto --------- */
+    /* --------- Flashcards (juego 5) --------- */
     function renderFlashcards(container){
       const promo = promotionsData[state.activePromotionKey]||{}; 
       const flashcards = promo.flashcards||[];
@@ -770,7 +782,6 @@
           <div id="flashcard-feedback" role="alert" class="text-center text-xl font-bold mt-2 h-8"></div>
         </div>`;
 
-      // Enter = Comprobar
       const input = document.getElementById('flashcard-input');
       const reveal = document.getElementById('flash-reveal');
       const toggleReveal = ()=>{
@@ -827,7 +838,7 @@
       renderFlashcards(document.getElementById('game-content')); 
     }
 
-    /* --------- Completar Texto (selección múltiple) + hotkeys 1–4 --------- */
+    /* --------- Completar Texto (selección múltiple) --------- */
     function renderCompleteTextMC(container){
       const promo=promotionsData[state.activePromotionKey]||{};
       const { questions=[], flashcards=[], fillInTheBlanks=[] } = promo;
@@ -850,7 +861,6 @@
       state.gameData.completeCurrentAnswer = correctDisplay;
       state.gameData.completeIndex = completeIndex;
 
-      // Hotkeys 1–4
       const handler = (e)=>{
         if(['1','2','3','4'].includes(e.key)){
           const btn = document.querySelector(`#ct-grid .btn[data-idx="${e.key}"]`);
@@ -879,7 +889,7 @@
       }
     }
 
-    /* --------- Completar con input (FIB) (Enter = comprobar) --------- */
+    /* --------- FIB --------- */
     function renderFillInTheBlank(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const items=(promo.fillInTheBlanks||[]).slice();
       const { fibIndex=0 } = state.gameData;
@@ -909,7 +919,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.fibIndex=0; renderFillInTheBlank(document.getElementById('game-content')); },800); }
     }
 
-    /* --------- Verdadero/Falso (con wrong garantizado) + hotkeys --------- */
+    /* --------- Verdadero/Falso --------- */
     function renderTrueFalse(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const questions=promo.questions||[];
       const { currentTFIndex=0 } = state.gameData;
@@ -1011,7 +1021,6 @@
     function clearAndRender(){ clearTimer(); render(); }
     function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
 
-    // Limpieza de hotkeys al re-render
     function removeHotkeys(){
       window._mcHandler && document.removeEventListener('keydown', window._mcHandler);
       window._ctHandler && document.removeEventListener('keydown', window._ctHandler);
