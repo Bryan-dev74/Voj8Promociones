@@ -48,7 +48,7 @@
   <script>
     const SHOW_EXPLANATION = true;
 
-    /* =================== DATA =================== */
+    /* ========== DATA (sin cambios de contenido) ========== */
     const promotionsData = {
       "Bônus de 1º Depósito + Roda da Fortuna": {
         questions: [
@@ -355,7 +355,7 @@
       "Momento de Compartilhar": "Comparte y Gana"
     };
 
-    /* =================== ESTADO =================== */
+    /* ========== ESTADO / STORAGE ========== */
     let state = {
       currentView:'menu',
       activePromotionKey:null,
@@ -373,10 +373,11 @@
       getVisiblePromoKeys().forEach(k=>{ if(typeof state.progress[k]!=='number') state.progress[k]=0; });
       try{ state.hardMode = localStorage.getItem('voj8HardMode')==='1'; }catch{}
       saveProgress();
+      validateDataOnce();
     }
     function saveProgress(){ try{ localStorage.setItem('voj8GameProgress', JSON.stringify(state.progress)); localStorage.setItem('voj8HardMode', state.hardMode?'1':'0'); }catch{} }
 
-    /* =================== UI PRINCIPAL =================== */
+    /* ========== RENDER MENÚ/JUEGO ========== */
     function getVisiblePromoKeys(){ return Object.keys(promotionDisplayNames).filter(k=>!!promotionsData[k]); }
     function render(){ mainContent.innerHTML=''; if(state.currentView==='menu') renderMenu(); else renderGame(); }
 
@@ -392,7 +393,7 @@
               <ul class="text-sm text-gray-300 list-disc pl-5 space-y-1">
                 <li>Para desbloquear una ⭐ y el siguiente nivel debes responder <b>todas</b> las preguntas del juego <b>seguidas y sin errores</b>.</li>
                 <li>Cada juego tiene un <b>temporizador</b>. Si se agota, se considera fallo y <b>no desbloqueas</b> el nivel.</li>
-                <li>Las respuestas son coherentes entre juegos: si dos preguntas son la misma idea, la respuesta correcta es <b>exactamente la misma</b>.</li>
+                <li>Las respuestas son coherentes entre juegos: si dos preguntas son la misma idea, la respuesta correcta es <b>exactamente la misma</b> (sin variantes).</li>
               </ul>
             </div>
             <label class="toggle text-sm"><input type="checkbox" id="hard-toggle" ${state.hardMode?'checked':''} onchange="toggleHardMode(this.checked)"><span>Modo Difícil</span></label>
@@ -462,7 +463,7 @@
 
       if(state.activeGameLevel>0){
         const c=document.getElementById('game-content');
-        setupTimerForLevel(); // tiempo NO tocado
+        setupTimerForLevel(); // sin tocar el tiempo
         if(state.activeGameLevel===1) renderMultipleChoice(c);
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
@@ -473,7 +474,7 @@
       }
     }
 
-    /* =================== TEMPORIZADOR (igual) =================== */
+    /* ========== TEMPORIZADOR (sin cambios) ========== */
     function secsPerItemFor(level){
       const base = state.hardMode ? {1:18,2:16,3:14,4:10,5:10} : {1:24,2:22,3:20,4:14,5:12};
       return base[level] || 18;
@@ -510,45 +511,35 @@
       if(s<=10) el.classList.add('text-red-400'); else el.classList.remove('text-red-400');
     }
 
-    /* =================== NORMALIZACIÓN =================== */
+    /* ========== NORMALIZACIÓN / COHERENCIA (mejorada) ========== */
     const percentRe  = /^\d+([.,]\d+)?%$/i;
     const rolloverRe = /^\d+\s*x$/i;
     const moneyRe    = /^r\$/i;
 
     function canon(raw){
       let s = String(raw ?? '').trim().toLowerCase();
-
-      // quitar acentos y limpiar
-      s = s.normalize('NFD').replace(/\p{Diacritic}/gu,'');
+      s = s.normalize('NFD').replace(/\p{Diacritic}/gu,''); // quitar tildes
       s = s.replace(/[^\w%$x\s\.,@-]/g,'').replace(/\s+/g,' ').trim();
-
-      // formatos
-      if (/%$/.test(s)) s = s.replace(',', '.');   // 0,3% -> 0.3%
-      s = s.replace(/\be-mail\b/g,'email');        // e-mail -> email
+      if (/%$/.test(s)) s = s.replace(',', '.');  // 0,3% -> 0.3%
+      s = s.replace(/\be-mail\b/g,'email');
       s = s.replace(/\bsin limite\b/g,'no hay limite');
 
-      // ======= SINÓNIMOS CRÍTICOS =======
-      // Todas las variantes del “perder todos los bonos / evento se reinicia”
+      // === SINÓNIMOS CRÍTICOS ===
       if (/(pierdes?|se pierden)\s+todos\s+los\s+bonos/.test(s)) s = 'pierdes todos los bonos';
       if (/(el\s+)?evento\s+se\s+reinicia.*(bono|bonos)/.test(s)) s = 'pierdes todos los bonos';
       if (/(faltar|omitir|omites?).*dia.*(bono|bonos)/.test(s)) s = 'pierdes todos los bonos';
 
-      // otros mapeos canónicos
       if (/^un?\s*giro.*(roda|rueda).*fortuna/.test(s)) s = 'giro en la roda da fortuna';
       if (/^miembro.*telegram/.test(s)) s = 'ser miembro del grupo oficial de telegram';
       if (/^manual\s+al\s+depositar/.test(s)) s = 'manual al depositar';
 
-      // numéricos
       if(percentRe.test(s)) return parseFloat(s);
       if(rolloverRe.test(s)) return parseFloat(s);
       if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));
       if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
-
-      // limpieza final
-      s = s.replace(/[^\w%$x\s\.,@]/g,'').trim();
       return s;
     }
-
+    function answersEqual(a,b){ try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); } }
     const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
     const uniqByCanon = (arr)=>{ const seen=new Set(); const out=[]; for(const v of arr){ const k=canon(v); if(!seen.has(k)){ seen.add(k); out.push(v); } } return out; };
 
@@ -561,7 +552,7 @@
       return out;
     }
 
-    /* =================== Distractores/Construcción =================== */
+    /* ========== Distractores / Opciones ========== */
     function closeMoneyOptions(correctInt){
       const deltas = [Math.round(correctInt*0.05), 50, 100, 200].map(Math.abs);
       const cand = new Set();
@@ -649,7 +640,7 @@
       return { options, correctDisplay };
     }
 
-    /* =================== JUEGOS =================== */
+    /* ========== LÓGICA DE JUEGOS ========== */
     function startGame(level){
       state.activeGameLevel=level;
       state.gameData={
@@ -661,10 +652,9 @@
       render();
     }
 
-    function answersEqual(a,b){ try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); } }
     function stripIndexPrefix(s){ return String(s||'').replace(/^\s*\[\d\]\s*/,'').trim(); }
 
-    /* ---- Nivel 1: Opción múltiple ---- */
+    /* --------- Opción múltiple --------- */
     function renderMultipleChoice(container){
       const promo = promotionsData[state.activePromotionKey]||{};
       const questions = promo.questions||[];
@@ -728,23 +718,21 @@
       return `✅ Correcto: <b>${correct}</b>.`;
     }
 
-    /* ---- Nivel 5: Flashcards (con bloqueo de “Siguiente”) ---- */
+    /* --------- Flashcards (juego 5) --------- */
     function renderFlashcards(container){
       const promo = promotionsData[state.activePromotionKey]||{}; 
       const flashcards = promo.flashcards||[];
       const { currentCardIndex=0, selfCheck=false } = state.gameData;
-
       if(!flashcards.length){ showSummary(container); return; }
       if(currentCardIndex>=flashcards.length){ showSummary(container); return; }
-
       const card=flashcards[currentCardIndex];
-      const hint = (promo.questions && promo.questions[currentCardIndex]) ? promo.questions[currentCardIndex].question : '';
+      const hint = `Pista: ${card.front}`; // <— pista basada en la tarjeta, evita desalineaciones
 
       if (typeof state.gameData.canNext === 'undefined') state.gameData.canNext = false;
 
       container.innerHTML = `
         <p class="text-xl text-gray-300 mb-4">Tarjeta ${currentCardIndex+1} de ${flashcards.length}</p>
-        ${hint?`<div class='mb-2 text-lg text-yellow-400 font-semibold'>Pista: ${hint}</div>`:''}
+        ${hint?`<div class='mb-2 text-lg text-yellow-400 font-semibold'>${hint}</div>`:''}
         <div class="flashcard-container h-64">
           <div id="flashcard" class="flashcard relative w-full h-full ${selfCheck?'is-flipped':''}">
             <div class="flashcard-face absolute w-full h-full card flex items-center justify-center p-4 text-center bg-gray-800 border-2 border-yellow-400">
@@ -784,46 +772,20 @@
       input?.focus();
       toggleReveal();
     }
-    function flipCard(){ 
-      const fc=document.getElementById('flashcard'); 
-      if(fc){ fc.classList.toggle('is-flipped'); state.gameData.selfCheck=!state.gameData.selfCheck; } 
-    }
+    function flipCard(){ const fc=document.getElementById('flashcard'); if(fc){ fc.classList.toggle('is-flipped'); state.gameData.selfCheck=!state.gameData.selfCheck; } }
     function checkFlashcardSelfCheck(){
-      const promo=promotionsData[state.activePromotionKey]||{}; 
-      const f=promo.flashcards||[]; 
-      const { currentCardIndex=0 } = state.gameData;
-      const input=document.getElementById('flashcard-input'); 
-      const fb=document.getElementById('flashcard-feedback'); 
-      const nextBtn=document.getElementById('flash-next');
+      const promo=promotionsData[state.activePromotionKey]||{}; const f=promo.flashcards||[]; const { currentCardIndex=0 } = state.gameData;
+      const input=document.getElementById('flashcard-input'); const fb=document.getElementById('flashcard-feedback'); const nextBtn=document.getElementById('flash-next');
       if(!input||!fb||!f[currentCardIndex]) return;
-
       const ok = answersEqual(input.value, f[currentCardIndex].back);
-      fb.textContent = ok ? '¡Correcto!' : 'Sigue intentando';
-      fb.style.color = ok ? 'var(--success)' : 'var(--error)';
-
+      fb.textContent = ok?'¡Correcto!':'Sigue intentando'; fb.style.color=ok?'var(--success)':'var(--error)';
       state.gameData.review.push({ q:`Flashcard: ${f[currentCardIndex].front}`, correct:f[currentCardIndex].back, selected:input.value, ok });
-
-      if(ok){
-        state.gameData.canNext = true;
-        nextBtn?.removeAttribute('disabled');
-        nextBtn?.setAttribute('aria-disabled','false');
-      }else{
-        state.gameData.mistake = true;
-        state.gameData.canNext = false;
-        nextBtn?.setAttribute('disabled','disabled');
-        nextBtn?.setAttribute('aria-disabled','true');
-      }
+      if(ok){ state.gameData.canNext = true; nextBtn?.removeAttribute('disabled'); nextBtn?.setAttribute('aria-disabled','false'); }
+      else{ state.gameData.mistake=true; state.gameData.canNext=false; nextBtn?.setAttribute('disabled','disabled'); nextBtn?.setAttribute('aria-disabled','true'); }
     }
-    function nextFlashcard(){ 
-      if(!state.gameData.canNext) return;
-      const {currentCardIndex=0}=state.gameData; 
-      state.gameData.currentCardIndex=currentCardIndex+1; 
-      state.gameData.selfCheck=false; 
-      state.gameData.canNext=false; 
-      renderFlashcards(document.getElementById('game-content')); 
-    }
+    function nextFlashcard(){ if(!state.gameData.canNext) return; const {currentCardIndex=0}=state.gameData; state.gameData.currentCardIndex=currentCardIndex+1; state.gameData.selfCheck=false; state.gameData.canNext=false; renderFlashcards(document.getElementById('game-content')); }
 
-    /* ---- Nivel 2: Completar texto (selección) ---- */
+    /* --------- Completar Texto (selección múltiple) --------- */
     function renderCompleteTextMC(container){
       const promo=promotionsData[state.activePromotionKey]||{};
       const { questions=[], flashcards=[], fillInTheBlanks=[] } = promo;
@@ -874,7 +836,7 @@
       }
     }
 
-    /* ---- Nivel 3: Completar con input ---- */
+    /* --------- FIB --------- */
     function renderFillInTheBlank(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const items=(promo.fillInTheBlanks||[]).slice();
       const { fibIndex=0 } = state.gameData;
@@ -904,7 +866,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.fibIndex=0; renderFillInTheBlank(document.getElementById('game-content')); },800); }
     }
 
-    /* ---- Nivel 4: Verdadero/Falso ---- */
+    /* --------- Verdadero/Falso --------- */
     function renderTrueFalse(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const questions=promo.questions||[];
       const { currentTFIndex=0 } = state.gameData;
@@ -961,7 +923,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.currentTFIndex=0; renderTrueFalse(document.getElementById('game-content')); },800); }
     }
 
-    /* =================== RESUMEN =================== */
+    /* ========== RESUMEN / DESBLOQUEO ========== */
     function showSummary(container, fromTimeout=false){
       clearTimer();
       const review = state.gameData.review || [];
@@ -999,14 +961,31 @@
       state.activeGameLevel=0; state.gameData={}; render();
     }
 
-    /* =================== UTILS =================== */
+    /* ========== UTILS / NAV ========== */
     function shuffleArray(a){ const arr=[...a]; for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return arr; }
     function flashRedEffect(){ const o=document.createElement('div'); Object.assign(o.style,{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',background:'rgba(255,0,0,0.25)',zIndex:99999,pointerEvents:'none',transition:'opacity .5s'}); document.body.appendChild(o); setTimeout(()=>o.style.opacity='0',600); setTimeout(()=>o.remove(),900); }
     function goToMenu(){ clearTimer(); state.currentView='menu'; state.activePromotionKey=null; state.activeGameLevel=0; state.gameData={}; render(); }
     function clearAndRender(){ clearTimer(); render(); }
     function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
 
-    // limpiar hotkeys entre vistas
+    // Validación rápida de dataset (avisos en consola)
+    let validated=false;
+    function validateDataOnce(){
+      if(validated) return; validated=true;
+      Object.keys(promotionsData).forEach(k=>{
+        const p=promotionsData[k];
+        const seen=new Map();
+        (p.questions||[]).forEach(q=>{ seen.set(q.question, q.answer); });
+        (p.flashcards||[]).forEach(f=>{
+          // intentar encontrar una pregunta parecida a la tarjeta
+          const match=(p.questions||[]).find(q=> q.question.toLowerCase().includes(f.front.toLowerCase().split(' ')[0]) );
+          if(match && !answersEqual(match.answer, f.back)){
+            console.warn(`[Aviso datos] "${k}" -> tarjeta "${f.front}" parece no coincidir con pregunta relacionada.`, match.answer, 'vs', f.back);
+          }
+        });
+      });
+    }
+
     function removeHotkeys(){
       window._mcHandler && document.removeEventListener('keydown', window._mcHandler);
       window._ctHandler && document.removeEventListener('keydown', window._ctHandler);
