@@ -352,7 +352,7 @@
       "Promoção da Sorte VOJ8: OVO PREMIADO 777": "Sorteo OVO PREMIADO 777",
       "Festival de Prêmios PG": "Festival de Premios PG",
       "Bônus VOJ8 de Ganhos": "Bono de Ganancias",
-      "Bônus Grátis: Ovo de Ouro da Suerte": "Huevo de Oro de la Suerte",
+      "Bônus Grátis: Ovo de Ouro da Sorte": "Huevo de Oro de la Suerte",
       "Momento de Compartilhar": "Comparte y Gana"
     };
 
@@ -463,7 +463,7 @@
 
       if(state.activeGameLevel>0){
         const c=document.getElementById('game-content');
-        setupTimerForLevel(); // NO se toca la lógica del tiempo
+        setupTimerForLevel(); // no se toca el tiempo
         if(state.activeGameLevel===1) renderMultipleChoice(c);
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
@@ -512,7 +512,7 @@
     }
 
     /* ========== NORMALIZACIÓN / COHERENCIA (mejorada) ========== */
-    const percentRe  = /^\d+([.,]\d+)?%$/i;   // acepta 0,5% y 0.5%
+    const percentRe  = /^\d+([.,]\d+)?%$/i;   // 0,5% o 0.5%
     const rolloverRe = /^\d+\s*x$/i;
     const moneyRe    = /^r\$/i;
     const canonMap = [
@@ -525,11 +525,11 @@
       let s=String(t||'').trim().toLowerCase();
       s = s.normalize('NFD')
            .replace(/\p{Diacritic}/gu,'')
-           .replace(/[^\w%$x\s\.,@]/g,'') // permite coma y punto para % y miles
+           .replace(/[^\w%$x\s\.,@]/g,'') // permite coma y punto
            .replace(/\s+/g,' ')
            .trim();
 
-      // Normalización específica
+      // Normalizaciones específicas
       if (/%$/.test(s)) s = s.replace(',', '.'); // 0,5% -> 0.5%
 
       canonMap.forEach(([re,rep])=>{ if(re.test(s)) s=rep; });
@@ -537,6 +537,7 @@
       if(percentRe.test(s)) return parseFloat(s);                         // "0.5%" -> 0.5
       if(rolloverRe.test(s)) return parseFloat(s);                        // "15x"  -> 15
       if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));    // "R$1.000" -> 1000
+      if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);                   // "10" -> 10
       return s;
     }
     const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
@@ -612,13 +613,11 @@
     }
 
     function ensureFour(opts, promoKey, qText, correct){
-      // Queremos 3 distractores + 1 correcta
       let out = uniqByCanon(opts).filter(v=>canon(v)!==canon(correct));
       while(out.length<3){
         const sib = siblingTextDistractors(promoKey, correct).find(v=>!out.some(o=>canon(o)===canon(v)));
         if(sib) out.push(sib); else break;
       }
-      // Relleno genérico seguro
       const generic = ['Telegram','Depósito','Cashback','VIP','Premio','Apuesta','Rollover','Automático','Manual','Cupón'];
       let gi=0;
       while(out.length<3 && gi<generic.length){
@@ -626,7 +625,7 @@
         if(canon(g)!==canon(correct) && !out.some(o=>canon(o)===canon(g))) out.push(g);
       }
       out = uniqByCanon([correct, ...out]).slice(0,4);
-      while(out.length<4) out.push('—'); // último recurso
+      while(out.length<4) out.push('—');
       return shuffleArray(out);
     }
 
@@ -660,6 +659,12 @@
       render();
     }
 
+    /* --------- Util: igualdad canónica --------- */
+    function answersEqual(a,b){
+      try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); }
+    }
+    function stripIndexPrefix(s){ return String(s||'').replace(/^\s*\[\d\]\s*/,'').trim(); }
+
     /* --------- Opción múltiple (+ hotkeys 1–4) --------- */
     function renderMultipleChoice(container){
       const promo = promotionsData[state.activePromotionKey]||{};
@@ -673,7 +678,7 @@
         <p class="text-xl text-gray-300 mb-1">Pregunta ${currentQuestionIndex+1} de ${questions.length}</p>
         <h3 class="text-2xl font-semibold mb-4">${q.question}</h3>
         <div id="mc-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
-          ${options.map((opt,i)=>`<button data-idx="${i+1}" onclick="checkMultipleChoiceAnswer(this,'${opt.replace(/'/g,"\\'")}')" class="btn option-btn p-4 w-full text-left"><span class="mr-2 opacity-60">[${i+1}]</span>${opt}</button>`).join('')}
+          ${options.map((opt,i)=>`<button data-idx="${i+1}" onclick="checkMultipleChoiceAnswer(this,'${opt.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" class="btn option-btn p-4 w-full text-left"><span class="mr-2 opacity-60">[${i+1}]</span>${opt}</button>`).join('')}
         </div>
         <div id="mc-explain" role="alert" class="text-sm text-gray-400"></div>`;
 
@@ -684,26 +689,33 @@
           if(btn && !btn.disabled) btn.click();
         }
       };
-      // Guardar y limpiar
       window._mcHandler && document.removeEventListener('keydown', window._mcHandler);
       window._mcHandler = handler;
       document.addEventListener('keydown', handler);
     }
-    function checkMultipleChoiceAnswer(button, selected){
+    function checkMultipleChoiceAnswer(button, selectedLiteral){
       const promo=promotionsData[state.activePromotionKey];
       const { currentQuestionIndex=0 } = state.gameData;
       const qObj = promo.questions[currentQuestionIndex];
       const correct = qObj.answer;
+
+      // Tomo el texto real del botón por si el literal difiere
+      const selectedFromBtn = stripIndexPrefix(button.innerText);
+      const selected = selectedLiteral || selectedFromBtn;
+
       document.querySelectorAll('.option-btn').forEach(b=>{ b.disabled=true; b.setAttribute('aria-disabled','true'); });
       const explain = document.getElementById('mc-explain');
-      const ok = canon(selected)===canon(correct);
-      state.gameData.review.push({ q:qObj.question, correct, selected, ok });
+
+      const ok = answersEqual(selected, correct) || answersEqual(selectedFromBtn, correct);
+
+      state.gameData.review.push({ q:qObj.question, correct, selected: selectedFromBtn, ok });
+
       if(ok){
         button.classList.add('correct'); if(SHOW_EXPLANATION && explain) explain.innerHTML = buildExplanation(qObj, correct);
         setTimeout(()=>{ state.gameData.currentQuestionIndex=currentQuestionIndex+1; renderMultipleChoice(document.getElementById('game-content')); },700);
       }else{
         state.gameData.mistake=true; button.classList.add('incorrect');
-        document.querySelectorAll('.option-btn').forEach(b=>{ if(canon(b.innerText)===canon(correct)) b.classList.add('correct'); });
+        document.querySelectorAll('.option-btn').forEach(b=>{ if(answersEqual(stripIndexPrefix(b.innerText), correct)) b.classList.add('correct'); });
         flashRedEffect(); if(explain) explain.innerHTML='';
         setTimeout(()=>{ state.gameData.currentQuestionIndex=0; renderMultipleChoice(document.getElementById('game-content')); },800);
       }
@@ -789,7 +801,7 @@
       const nextBtn=document.getElementById('flash-next');
       if(!input||!fb||!f[currentCardIndex]) return;
 
-      const ok = canon(input.value)===canon(f[currentCardIndex].back);
+      const ok = answersEqual(input.value, f[currentCardIndex].back);
       fb.textContent = ok ? '¡Correcto!' : 'Sigue intentando';
       fb.style.color = ok ? 'var(--success)' : 'var(--error)';
 
@@ -800,18 +812,18 @@
         nextBtn?.removeAttribute('disabled');
         nextBtn?.setAttribute('aria-disabled','false');
       }else{
-        state.gameData.mistake = true;        // queda como fallo (sin desbloquear)
+        state.gameData.mistake = true;
         state.gameData.canNext = false;
         nextBtn?.setAttribute('disabled','disabled');
         nextBtn?.setAttribute('aria-disabled','true');
       }
     }
     function nextFlashcard(){ 
-      if(!state.gameData.canNext) return; // guard
+      if(!state.gameData.canNext) return;
       const {currentCardIndex=0}=state.gameData; 
       state.gameData.currentCardIndex=currentCardIndex+1; 
       state.gameData.selfCheck=false; 
-      state.gameData.canNext=false;  // reset para la próxima tarjeta
+      state.gameData.canNext=false; 
       renderFlashcards(document.getElementById('game-content')); 
     }
 
@@ -832,7 +844,7 @@
         <p class="text-xl text-gray-300 mb-4">Completa el texto seleccionando la opción correcta</p>
         <p class="text-2xl leading-relaxed text-center mb-6">${item.text.replace('__','<span class="underline text-yellow-400">____</span>')}</p>
         <div id="ct-grid" class="flex flex-col items-center gap-3 mb-2">
-          ${options.map((opt,i)=>`<button data-idx="${i+1}" class="btn btn-gold py-2 px-6" onclick="checkCompleteTextMC(this,'${opt.replace(/'/g,"\\'")}','${correctDisplay.replace(/'/g,"\\'")}')"><span class="mr-2 opacity-60">[${i+1}]</span>${opt}</button>`).join('')}
+          ${options.map((opt,i)=>`<button data-idx="${i+1}" class="btn btn-gold py-2 px-6" onclick="checkCompleteTextMC(this,'${opt.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${correctDisplay.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"><span class="mr-2 opacity-60">[${i+1}]</span>${opt}</button>`).join('')}
         </div>
         <div id="complete-feedback" role="alert" class="text-center text-sm text-gray-400 h-6"></div>`;
       state.gameData.completeCurrentAnswer = correctDisplay;
@@ -853,7 +865,7 @@
       const correct = state.gameData.completeCurrentAnswer || correctShown;
       const fb=document.getElementById('complete-feedback');
       document.querySelectorAll('#ct-grid .btn').forEach(b=>{ b.disabled=true; b.setAttribute('aria-disabled','true'); });
-      const ok = canon(selected)===canon(correct);
+      const ok = answersEqual(selected, correct);
       const enunciado = document.querySelector('#game-content p.text-2xl')?.innerText || '';
       state.gameData.review.push({ q: enunciado.replace(/\s+/g,' ').trim(), correct, selected, ok });
       if(ok){
@@ -890,7 +902,7 @@
     }
     function checkFIB(){
       const input=document.getElementById('fib-input'); const fb=document.getElementById('fib-feedback');
-      const ok = canon(input.value)===canon(String(state.gameData.fibAnswer||'')); 
+      const ok = answersEqual(input.value, String(state.gameData.fibAnswer||'')); 
       const enunciado = document.querySelector('#game-content p.text-2xl')?.innerText || '';
       state.gameData.review.push({ q: enunciado.replace(/\s+/g,' ').trim(), correct: state.gameData.fibAnswer, selected: input.value, ok });
       if(ok){ fb.textContent='¡Correcto!'; fb.style.color='var(--success)'; setTimeout(()=>{ state.gameData.fibIndex=(state.gameData.fibIndex||0)+1; renderFillInTheBlank(document.getElementById('game-content')); },700); }
@@ -906,16 +918,14 @@
       const q=questions[currentTFIndex];
 
       let ctx = contextCandidates(state.activePromotionKey, q.question, q.answer)||[];
-      // Garantizar "wrong" distinto al correcto
-      let wrong = ctx.find(o=>canon(o)!==canon(q.answer));
+      let wrong = ctx.find(o=>!answersEqual(o, q.answer));
       if(!wrong){
         const sibs = siblingTextDistractors(state.activePromotionKey, q.answer);
-        wrong = sibs.find(o=>canon(o)!==canon(q.answer));
+        wrong = sibs.find(o=>!answersEqual(o, q.answer));
       }
       if(!wrong){
-        // último recurso genérico pero distinto
         const fallbacks = ['Automático','Manual','Telegram','VIP','Cupón','Cashback 5%','Rollover 2x','R$50','10%'];
-        wrong = fallbacks.find(o=>canon(o)!==canon(q.answer)) || '—';
+        wrong = fallbacks.find(o=>!answersEqual(o, q.answer)) || '—';
       }
 
       const showCorrect = (currentTFIndex % 2 === 0);
@@ -931,7 +941,6 @@
         </div>
         <div id="tf-feedback" role="alert" class="text-center text-sm text-gray-400 h-6"></div>`;
 
-      // Hotkeys: V/F o ←/→
       const handler = (e)=>{
         if(e.key.toLowerCase()==='v'){ document.getElementById('tf-true')?.click(); }
         else if(e.key.toLowerCase()==='f'){ document.getElementById('tf-false')?.click(); }
@@ -945,13 +954,12 @@
     function checkTrueFalse(choice, qText, correct){
       const { currentTFIndex=0, currentTFShown } = state.gameData;
       const fb=document.getElementById('tf-feedback');
-      // bloquear doble click durante feedback
       document.getElementById('tf-true')?.setAttribute('disabled','disabled');
       document.getElementById('tf-true')?.setAttribute('aria-disabled','true');
       document.getElementById('tf-false')?.setAttribute('disabled','disabled');
       document.getElementById('tf-false')?.setAttribute('aria-disabled','true');
 
-      const isTrue = canon(currentTFShown)===canon(correct);
+      const isTrue = answersEqual(currentTFShown, correct);
       const ok = choice===isTrue;
       state.gameData.review.push({ q:`${qText} → ${currentTFShown}`, correct, selected: choice?'Verdadero':'Falso', ok });
       if(ok){ fb.textContent='¡Correcto!'; fb.style.color='var(--success)'; setTimeout(()=>{ state.gameData.currentTFIndex=currentTFIndex+1; renderTrueFalse(document.getElementById('game-content')); },700); }
@@ -1003,7 +1011,7 @@
     function clearAndRender(){ clearTimer(); render(); }
     function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
 
-    // Limpieza de handlers al cambiar de vista
+    // Limpieza de hotkeys al re-render
     function removeHotkeys(){
       window._mcHandler && document.removeEventListener('keydown', window._mcHandler);
       window._ctHandler && document.removeEventListener('keydown', window._ctHandler);
