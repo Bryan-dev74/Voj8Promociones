@@ -31,6 +31,9 @@
     .toggle input::after{content:"";position:absolute;width:18px;height:18px;top:3px;left:3px;background:#fff;border-radius:999px;transition:.2s}
     .toggle input:checked::after{left:23px}
     .timer{font-variant-numeric:tabular-nums}
+    /* === NUEVO: estilos para botones deshabilitados (gris/bloqueados) === */
+    .btn:disabled { opacity:.5; cursor:not-allowed; filter:grayscale(.7); transform:none; box-shadow:none; }
+    .btn-gold:disabled { background:#9ca3af; color:#1a1a1a; }
   </style>
 </head>
 <body class="min-h-screen">
@@ -466,7 +469,7 @@
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
         if(state.activeGameLevel===4) renderTrueFalse(c);
-        if(state.activeGameLevel===5) renderFlashcards(c);
+        if(state.activeGameLevel===5) renderFlashcards(c); // JUEGO 5
       }else{
         clearTimer();
       }
@@ -474,7 +477,6 @@
 
     /* ========== TEMPORIZADOR ========== */
     function secsPerItemFor(level){
-      // más estricto en difícil
       const base = state.hardMode ? {1:18,2:16,3:14,4:10,5:10} : {1:24,2:22,3:20,4:14,5:12};
       return base[level] || 18;
     }
@@ -500,7 +502,7 @@
       const el=document.getElementById('timer-el');
       if(!el || !state.deadline) return;
       const ms = state.deadline - Date.now();
-      if(ms<=0){ el.textContent='00:00'; clearTimer(); // tiempo agotado -> fallo y resumen
+      if(ms<=0){ el.textContent='00:00'; clearTimer();
         state.gameData.mistake = true;
         showSummary(document.getElementById('game-content'), true);
         return;
@@ -524,7 +526,6 @@
       let s=String(t||'').trim().toLowerCase();
       s = s.normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^\w%$x\s\.@]/g,'').replace(/\s+/g,' ').trim();
       canonMap.forEach(([re,rep])=>{ if(re.test(s)) s=rep; });
-      // numeros homogenizados
       if(percentRe.test(s)) return parseFloat(s);
       if(rolloverRe.test(s)) return parseFloat(s);
       if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));
@@ -544,7 +545,6 @@
 
     /* ========== DISTRCTORES (modo normal/difícil) ========== */
     function closeMoneyOptions(correctInt){
-      // vecinos cercanos para modo difícil
       const deltas = [Math.round(correctInt*0.05), 50, 100, 200].map(Math.abs);
       const cand = new Set();
       for(const d of deltas){
@@ -565,24 +565,22 @@
       const q=qText.toLowerCase();
       const c=canon(correct);
 
-      // si es numérico, ajustar por modo difícil
       if(typeof c==='number'){
-        if(percentRe.test(correct)){ // porcentaje
+        if(percentRe.test(correct)){
           return state.hardMode ? closePercentOptions(c) : ['5%','10%','15%','20%','25%','50%','100%'].filter(v=>canon(v)!==c);
         }
-        if(rolloverRe.test(correct)){ // rollover
+        if(rolloverRe.test(correct)){
           return state.hardMode ? closeRolloverOptions(c) : ['1x','3x','5x','10x','15x','20x','30x'].filter(v=>canon(v)!==c);
         }
-        if(moneyRe.test(correct)){ // monto
+        if(moneyRe.test(correct)){
           const near = state.hardMode ? closeMoneyOptions(c) : [500,1000,1500,2000,5555,8888].map(fmtMoney);
           return near.filter(v=>canon(v)!==c);
         }
       }
 
-      // TEXTUALES: propuestas plausibles (y en difícil, más “parecidas” pero no sinónimas)
       const textCands = [];
       if(q.includes('premio adicional')){
-        textCands.push('Cashback 5%','Puntos VIP','Cupón sorpresa'); // no duplicamos “giro…”
+        textCands.push('Cashback 5%','Puntos VIP','Cupón sorpresa');
       }else if(q.includes('activa')||q.includes('accion')||q.includes('acción')){
         textCands.push('Automáticamente','Contactando soporte','Por Telegram');
       }else if(q.includes('apuestas califican')){
@@ -593,7 +591,6 @@
         textCands.push('Hacer una apuesta deportiva','Depositar con USDT','Ser VIP');
       }
       if(state.hardMode){
-        // variantes “parecidas” pero NO sinónimas del correcto
         if(canon(correct)==='manual al depositar'){
           textCands.push('Automático al depositar','Manual después de depositar');
         }
@@ -610,16 +607,14 @@
 
     function ensureFour(opts, promoKey, qText, correct){
       let out = uniqByCanon(opts).filter(v=>canon(v)!==canon(correct));
-      while(out.length<3){ // primero hermano textual
+      while(out.length<3){
         const sib = siblingTextDistractors(promoKey, correct).find(v=>!out.some(o=>canon(o)===canon(v)));
         if(sib) out.push(sib); else break;
       }
-      // relleno de emergencia coherente
       while(out.length<3){
         const fallback = ['Telegram','Depósito','Cashback','VIP','Premio','Apuesta','Rollover','Requisito','Automático','Manual'].find(w=>!out.includes(w) && canon(w)!==canon(correct));
         if(!fallback) break; out.push(fallback);
       }
-      // + correcto y barajar
       out = uniqByCanon([correct, ...out]).slice(0,4);
       return shuffleArray(out);
     }
@@ -645,7 +640,7 @@
     /* ========== LÓGICA DE JUEGOS (modo perfecto + timer) ========== */
     function startGame(level){
       state.activeGameLevel=level;
-      state.gameData={ review:[], mistake:false, currentQuestionIndex:0, completeIndex:0, fibIndex:0, currentTFIndex:0, currentTFShown:null, currentCardIndex:0, selfCheck:false };
+      state.gameData={ review:[], mistake:false, currentQuestionIndex:0, completeIndex:0, fibIndex:0, currentTFIndex:0, currentTFShown:null, currentCardIndex:0, selfCheck:false, canNext:false };
       render();
     }
 
@@ -666,7 +661,9 @@
         <div id="mc-explain" class="text-sm text-gray-400"></div>`;
     }
     function checkMultipleChoiceAnswer(button, selected){
-      const promo=promotionsData[state.activePromotionKey]; const { currentQuestionIndex=0 } = state.gameData; const qObj = promo.questions[currentQuestionIndex];
+      const promo=promotionsData[state.activePromotionKey];
+      const { currentQuestionIndex=0 } = state.gameData;
+      const qObj = promo.questions[currentQuestionIndex];
       const correct = qObj.answer;
       document.querySelectorAll('.option-btn').forEach(b=>b.disabled=true);
       const explain = document.getElementById('mc-explain');
@@ -693,13 +690,21 @@
       return `✅ Correcto: <b>${correct}</b>.`;
     }
 
+    /* =================== JUEGO 5: FLASHCARDS (Corregido) =================== */
     function renderFlashcards(container){
-      const promo = promotionsData[state.activePromotionKey]||{}; const flashcards = promo.flashcards||[];
+      const promo = promotionsData[state.activePromotionKey]||{}; 
+      const flashcards = promo.flashcards||[];
       const { currentCardIndex=0, selfCheck=false } = state.gameData;
+
       if(!flashcards.length){ showSummary(container); return; }
       if(currentCardIndex>=flashcards.length){ showSummary(container); return; }
+
       const card=flashcards[currentCardIndex];
       const hint = (promo.questions && promo.questions[currentCardIndex]) ? promo.questions[currentCardIndex].question : '';
+
+      // Asegurar que no se pueda avanzar hasta comprobar correcto
+      if (typeof state.gameData.canNext === 'undefined') state.gameData.canNext = false;
+
       container.innerHTML = `
         <p class="text-xl text-gray-300 mb-4">Tarjeta ${currentCardIndex+1} de ${flashcards.length}</p>
         ${hint?`<div class='mb-2 text-lg text-yellow-400 font-semibold'>Pista: ${hint}</div>`:''}
@@ -714,26 +719,65 @@
           </div>
         </div>
         <div class="mt-6 flex flex-col items-center gap-4">
-          <button onclick="flipCard()" class="btn bg-gray-600 py-3 px-6">Revelar</button>
+          <button id="flash-reveal" onclick="flipCard()" class="btn bg-gray-600 py-3 px-6">Revelar</button>
           <div class="mt-2">
-            <input type="text" id="flashcard-input" class="mx-2 p-2 rounded bg-gray-900 border-2 border-gray-600 focus:border-yellow-400 focus:outline-none text-center w-48" placeholder="Escribe la respuesta">
-            <button onclick="checkFlashcardSelfCheck()" class="btn btn-gold py-2 px-4 ml-2">Comprobar</button>
+            <input type="text" id="flashcard-input" class="mx-2 p-2 rounded bg-gray-900 border-2 border-gray-600 focus:border-yellow-400 focus:outline-none text-center w-48" placeholder="Escribe la respuesta" />
+            <button id="flash-check" onclick="checkFlashcardSelfCheck()" class="btn btn-gold py-2 px-4 ml-2">Comprobar</button>
           </div>
           <div id="flashcard-feedback" class="text-center text-xl font-bold mt-2 h-8"></div>
-          <button onclick="nextFlashcard()" class="btn btn-gold py-3 px-6">Siguiente</button>
+          <button id="flash-next" onclick="nextFlashcard()" class="btn btn-gold py-3 px-6" ${state.gameData.canNext ? '' : 'disabled'}>Siguiente</button>
         </div>`;
-    }
-    function flipCard(){ const fc=document.getElementById('flashcard'); if(fc){ fc.classList.toggle('is-flipped'); state.gameData.selfCheck=!state.gameData.selfCheck; } }
-    function checkFlashcardSelfCheck(){
-      const promo=promotionsData[state.activePromotionKey]||{}; const f=promo.flashcards||[]; const { currentCardIndex=0 } = state.gameData;
-      const input=document.getElementById('flashcard-input'); const fb=document.getElementById('flashcard-feedback'); if(!input||!fb||!f[currentCardIndex]) return;
-      const ok = canon(input.value)===canon(f[currentCardIndex].back);
-      fb.textContent = ok?'¡Correcto!':'Sigue intentando'; fb.style.color=ok?'var(--success)':'var(--error)';
-      state.gameData.review.push({ q:`Flashcard: ${f[currentCardIndex].front}`, correct:f[currentCardIndex].back, selected:input.value, ok });
-      if(!ok){ state.gameData.mistake=true; }
-    }
-    function nextFlashcard(){ const {currentCardIndex=0}=state.gameData; state.gameData.currentCardIndex=currentCardIndex+1; state.gameData.selfCheck=false; renderFlashcards(document.getElementById('game-content')); }
 
+      // Enter = Comprobar
+      const input = document.getElementById('flashcard-input');
+      input?.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          checkFlashcardSelfCheck();
+        }
+      });
+      input?.focus();
+    }
+    function flipCard(){ 
+      const fc=document.getElementById('flashcard'); 
+      if(fc){ fc.classList.toggle('is-flipped'); state.gameData.selfCheck=!state.gameData.selfCheck; } 
+    }
+    function checkFlashcardSelfCheck(){
+      const promo=promotionsData[state.activePromotionKey]||{}; 
+      const f=promo.flashcards||[]; 
+      const { currentCardIndex=0 } = state.gameData;
+      const input=document.getElementById('flashcard-input'); 
+      const fb=document.getElementById('flashcard-feedback'); 
+      const nextBtn=document.getElementById('flash-next');
+      if(!input||!fb||!f[currentCardIndex]) return;
+
+      const ok = canon(input.value)===canon(f[currentCardIndex].back);
+      fb.textContent = ok ? '¡Correcto!' : 'Sigue intentando';
+      fb.style.color = ok ? 'var(--success)' : 'var(--error)';
+
+      state.gameData.review.push({ q:`Flashcard: ${f[currentCardIndex].front}`, correct:f[currentCardIndex].back, selected:input.value, ok });
+
+      if(ok){
+        state.gameData.canNext = true;
+        nextBtn?.removeAttribute('disabled');
+      }else{
+        state.gameData.mistake = true;        // cuenta como fallo en el resumen
+        state.gameData.canNext = false;
+        nextBtn?.setAttribute('disabled','disabled');
+      }
+    }
+    function nextFlashcard(){ 
+      // Guard: no avanzar si no se habilitó tras respuesta correcta
+      if(!state.gameData.canNext) return;
+
+      const {currentCardIndex=0}=state.gameData; 
+      state.gameData.currentCardIndex=currentCardIndex+1; 
+      state.gameData.selfCheck=false; 
+      state.gameData.canNext=false;  // reset para la próxima tarjeta
+      renderFlashcards(document.getElementById('game-content')); 
+    }
+
+    /* ========== Completar Texto (selección múltiple) ========== */
     function renderCompleteTextMC(container){
       const promo=promotionsData[state.activePromotionKey]||{};
       const { questions=[], flashcards=[], fillInTheBlanks=[] } = promo;
@@ -774,6 +818,7 @@
       }
     }
 
+    /* ========== Completar con input ========== */
     function renderFillInTheBlank(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const items=(promo.fillInTheBlanks||[]).slice();
       const { fibIndex=0 } = state.gameData;
@@ -787,6 +832,13 @@
         <div id="fib-feedback" class="text-center text-sm text-gray-400 h-6"></div>`;
       state.gameData.fibAnswer=String(cur.answer);
       state.gameData.fibIndex=fibIndex;
+
+      // Enter = Comprobar
+      const fibInput = document.getElementById('fib-input');
+      fibInput?.addEventListener('keydown',(e)=>{
+        if(e.key==='Enter'){ e.preventDefault(); checkFIB(); }
+      });
+      fibInput?.focus();
     }
     function checkFIB(){
       const input=document.getElementById('fib-input'); const fb=document.getElementById('fib-feedback');
@@ -797,6 +849,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.fibIndex=0; renderFillInTheBlank(document.getElementById('game-content')); },800); }
     }
 
+    /* ========== Verdadero/Falso ========== */
     function renderTrueFalse(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const questions=promo.questions||[];
       const { currentTFIndex=0 } = state.gameData;
@@ -873,7 +926,6 @@
     function goToMenu(){ clearTimer(); state.currentView='menu'; state.activePromotionKey=null; state.activeGameLevel=0; state.gameData={}; render(); }
     function clearAndRender(){ clearTimer(); render(); }
     function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
-    function clearTimer(){ if(state.timerId){ clearInterval(state.timerId); state.timerId=null; } state.deadline=null; }
 
     document.addEventListener('DOMContentLoaded',()=>{ initProgress(); render(); });
   </script>
