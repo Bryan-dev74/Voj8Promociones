@@ -1,0 +1,84 @@
+:root {
+    --success: #22c55e;
+    --error: #ef4444;
+}
+
+body {
+    background-color: #111827;
+    color: #ffffff;
+    font-family: 'Inter', sans-serif;
+}
+
+.min-h-screen {
+    min-height: 100vh;
+}
+
+.card {
+    background-color: #1f2937;
+    border-radius: 0.5rem;
+    border: 1px solid #374151;
+    transition: all 0.3s ease;
+}
+
+.btn {
+    border-radius: 0.375rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.btn-gold {
+    background-color: #f59e0b;
+    color: black;
+}
+
+.btn-gold:hover {
+    background-color: #d97706;
+}
+
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.option-btn {
+    background-color: #374151;
+    transition: all 0.3s ease;
+}
+
+.option-btn:hover:not(:disabled) {
+    background-color: #4b5563;
+}
+
+.option-btn.correct {
+    background-color: var(--success);
+    color: white;
+}
+
+.option-btn.incorrect {
+    background-color: var(--error);
+    color: white;
+}
+
+.flashcard {
+    perspective: 1000px;
+    cursor: pointer;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+}
+
+.flashcard.is-flipped {
+    transform: rotateY(180deg);
+}
+
+.flashcard-face,
+.flashcard-back {
+    backface-visibility: hidden;
+}
+
+.flashcard-back {
+    transform: rotateY(180deg);
+}
