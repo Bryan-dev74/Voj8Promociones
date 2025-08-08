@@ -48,7 +48,7 @@
   <script>
     const SHOW_EXPLANATION = true;
 
-    /* ========== DATA (sin cambios de contenido) ========== */
+    /* =================== DATA =================== */
     const promotionsData = {
       "Bônus de 1º Depósito + Roda da Fortuna": {
         questions: [
@@ -355,7 +355,7 @@
       "Momento de Compartilhar": "Comparte y Gana"
     };
 
-    /* ========== ESTADO / STORAGE ========== */
+    /* =================== ESTADO =================== */
     let state = {
       currentView:'menu',
       activePromotionKey:null,
@@ -376,7 +376,7 @@
     }
     function saveProgress(){ try{ localStorage.setItem('voj8GameProgress', JSON.stringify(state.progress)); localStorage.setItem('voj8HardMode', state.hardMode?'1':'0'); }catch{} }
 
-    /* ========== RENDER MENÚ/JUEGO ========== */
+    /* =================== UI PRINCIPAL =================== */
     function getVisiblePromoKeys(){ return Object.keys(promotionDisplayNames).filter(k=>!!promotionsData[k]); }
     function render(){ mainContent.innerHTML=''; if(state.currentView==='menu') renderMenu(); else renderGame(); }
 
@@ -392,7 +392,7 @@
               <ul class="text-sm text-gray-300 list-disc pl-5 space-y-1">
                 <li>Para desbloquear una ⭐ y el siguiente nivel debes responder <b>todas</b> las preguntas del juego <b>seguidas y sin errores</b>.</li>
                 <li>Cada juego tiene un <b>temporizador</b>. Si se agota, se considera fallo y <b>no desbloqueas</b> el nivel.</li>
-                <li>Las respuestas son coherentes entre juegos: si dos preguntas son la misma idea, la respuesta correcta es <b>exactamente la misma</b> (sin variantes).</li>
+                <li>Las respuestas son coherentes entre juegos: si dos preguntas son la misma idea, la respuesta correcta es <b>exactamente la misma</b>.</li>
               </ul>
             </div>
             <label class="toggle text-sm"><input type="checkbox" id="hard-toggle" ${state.hardMode?'checked':''} onchange="toggleHardMode(this.checked)"><span>Modo Difícil</span></label>
@@ -462,7 +462,7 @@
 
       if(state.activeGameLevel>0){
         const c=document.getElementById('game-content');
-        setupTimerForLevel(); // sin tocar el tiempo
+        setupTimerForLevel(); // tiempo NO tocado
         if(state.activeGameLevel===1) renderMultipleChoice(c);
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
@@ -473,7 +473,7 @@
       }
     }
 
-    /* ========== TEMPORIZADOR (sin cambios) ========== */
+    /* =================== TEMPORIZADOR (igual) =================== */
     function secsPerItemFor(level){
       const base = state.hardMode ? {1:18,2:16,3:14,4:10,5:10} : {1:24,2:22,3:20,4:14,5:12};
       return base[level] || 18;
@@ -510,52 +510,45 @@
       if(s<=10) el.classList.add('text-red-400'); else el.classList.remove('text-red-400');
     }
 
-    /* ========== NORMALIZACIÓN / COHERENCIA (mejorada + sinónimos) ========== */
+    /* =================== NORMALIZACIÓN =================== */
     const percentRe  = /^\d+([.,]\d+)?%$/i;
     const rolloverRe = /^\d+\s*x$/i;
     const moneyRe    = /^r\$/i;
-    const canonMap = [
-      [/^un?\s*giro.*(roda|rueda).*fortuna/i, 'giro en la roda da fortuna'],
-      [/^giro.*(roda|rueda).*fortuna/i, 'giro en la roda da fortuna'],
-      [/^miembro.*telegram/i, 'ser miembro del grupo oficial de telegram'],
-      [/^manual\s+al\s+depositar/i, 'manual al depositar'],
-    ];
-    function canon(t){
-      let s=String(t||'').trim().toLowerCase();
-      s = s.normalize('NFD')
-           .replace(/\p{Diacritic}/gu,'')
-           .replace(/[^\w%$x\s\.,@-]/g,'') // permite guion para "e-mail" antes de normalizar
-           .replace(/\s+/g,' ')
-           .trim();
 
-      // Normalizaciones específicas previas
-      if (/%$/.test(s)) s = s.replace(',', '.'); // 0,5% -> 0.5%
-      s = s.replace(/e-mail/g, 'email');         // e-mail -> email
+    function canon(raw){
+      let s = String(raw ?? '').trim().toLowerCase();
 
-      // Sinónimos que unifican conceptos
-      if (s.includes('sin limite')) s = 'no hay limite';
-      if (
-        s.includes('pierden todos los bonos') ||
-        s.includes('pierdes todos los bonos') ||
-        (s.includes('evento se reinicia') && s.includes('bonos')) ||
-        (s.includes('check') && s.includes('reinicia') && s.includes('bonos'))
-      ){
-        s = 'pierdes todos los bonos';
-      }
+      // quitar acentos y limpiar
+      s = s.normalize('NFD').replace(/\p{Diacritic}/gu,'');
+      s = s.replace(/[^\w%$x\s\.,@-]/g,'').replace(/\s+/g,' ').trim();
 
-      // Mapeos canónicos predefinidos
-      canonMap.forEach(([re,rep])=>{ if(re.test(s)) s=rep; });
+      // formatos
+      if (/%$/.test(s)) s = s.replace(',', '.');   // 0,3% -> 0.3%
+      s = s.replace(/\be-mail\b/g,'email');        // e-mail -> email
+      s = s.replace(/\bsin limite\b/g,'no hay limite');
 
-      // Tipos numéricos
-      if(percentRe.test(s)) return parseFloat(s);                      // "0.5%" -> 0.5
-      if(rolloverRe.test(s)) return parseFloat(s);                     // "15x"  -> 15
-      if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,'')); // "R$1.000" -> 1000
-      if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);                // "10" -> 10
+      // ======= SINÓNIMOS CRÍTICOS =======
+      // Todas las variantes del “perder todos los bonos / evento se reinicia”
+      if (/(pierdes?|se pierden)\s+todos\s+los\s+bonos/.test(s)) s = 'pierdes todos los bonos';
+      if (/(el\s+)?evento\s+se\s+reinicia.*(bono|bonos)/.test(s)) s = 'pierdes todos los bonos';
+      if (/(faltar|omitir|omites?).*dia.*(bono|bonos)/.test(s)) s = 'pierdes todos los bonos';
 
-      // Limpieza final
-      s = s.replace(/[^\w%$x\s\.,@]/g,'').trim(); // quitar el guion si quedó
+      // otros mapeos canónicos
+      if (/^un?\s*giro.*(roda|rueda).*fortuna/.test(s)) s = 'giro en la roda da fortuna';
+      if (/^miembro.*telegram/.test(s)) s = 'ser miembro del grupo oficial de telegram';
+      if (/^manual\s+al\s+depositar/.test(s)) s = 'manual al depositar';
+
+      // numéricos
+      if(percentRe.test(s)) return parseFloat(s);
+      if(rolloverRe.test(s)) return parseFloat(s);
+      if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));
+      if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+
+      // limpieza final
+      s = s.replace(/[^\w%$x\s\.,@]/g,'').trim();
       return s;
     }
+
     const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
     const uniqByCanon = (arr)=>{ const seen=new Set(); const out=[]; for(const v of arr){ const k=canon(v); if(!seen.has(k)){ seen.add(k); out.push(v); } } return out; };
 
@@ -568,7 +561,7 @@
       return out;
     }
 
-    /* ========== Distractores/Construcción de opciones ========== */
+    /* =================== Distractores/Construcción =================== */
     function closeMoneyOptions(correctInt){
       const deltas = [Math.round(correctInt*0.05), 50, 100, 200].map(Math.abs);
       const cand = new Set();
@@ -602,21 +595,14 @@
       }
 
       const textCands = [];
-      if(q.includes('premio adicional')){
-        textCands.push('Cashback 5%','Puntos VIP','Cupón sorpresa');
-      }else if(q.includes('activa')||q.includes('accion')||q.includes('acción')){
-        textCands.push('Automáticamente','Contactando soporte','Por Telegram');
-      }else if(q.includes('apuestas califican')){
-        textCands.push('Solo slots','Solo apuestas deportivas','Solo poker');
-      }else if(q.includes('enviar')){
-        textCands.push('El código','Un video','El ID de la apuesta');
-      }else if(q.includes('requisito principal')||q.includes('grupo')){
-        textCands.push('Hacer una apuesta deportiva','Depositar con USDT','Ser VIP');
-      }
-      if(state.hardMode){
-        if(canon(correct)==='manual al depositar'){
-          textCands.push('Automático al depositar','Manual después de depositar');
-        }
+      if(q.includes('premio adicional')) textCands.push('Cashback 5%','Puntos VIP','Cupón sorpresa');
+      else if(q.includes('activa')||q.includes('accion')||q.includes('acción')) textCands.push('Automáticamente','Contactando soporte','Por Telegram');
+      else if(q.includes('apuestas califican')) textCands.push('Solo slots','Solo apuestas deportivas','Solo poker');
+      else if(q.includes('enviar')) textCands.push('El código','Un video','El ID de la apuesta');
+      else if(q.includes('requisito principal')||q.includes('grupo')) textCands.push('Hacer una apuesta deportiva','Depositar con USDT','Ser VIP');
+
+      if(state.hardMode && canon(correct)==='manual al depositar'){
+        textCands.push('Automático al depositar','Manual después de depositar');
       }
       return uniqByCanon(textCands).filter(v=>canon(v)!==c);
     }
@@ -651,9 +637,9 @@
     }
 
     function buildOptionsForFill(text, answer, promoKey){
-      const hasMoney = /r\$\s*__/.test(text);
+      const hasMoney   = /r\$\s*__/.test(text);
       const hasPercent = /__\s*%/.test(text);
-      const hasRollover = /__\s*x/.test(text);
+      const hasRollover= /__\s*x/.test(text);
       let correctDisplay = answer;
       if(hasMoney   && /^\d+$/.test(answer)) correctDisplay = fmtMoney(answer);
       if(hasPercent && /^\d+([.,]\d+)?$/.test(answer)) correctDisplay = `${String(answer).replace(',', '.') }%`;
@@ -663,7 +649,7 @@
       return { options, correctDisplay };
     }
 
-    /* ========== LÓGICA DE JUEGOS (sin tocar tiempos) ========== */
+    /* =================== JUEGOS =================== */
     function startGame(level){
       state.activeGameLevel=level;
       state.gameData={
@@ -675,11 +661,10 @@
       render();
     }
 
-    /* Utils igualdad */
     function answersEqual(a,b){ try { return canon(a)===canon(b); } catch { return String(a).trim()===String(b).trim(); } }
     function stripIndexPrefix(s){ return String(s||'').replace(/^\s*\[\d\]\s*/,'').trim(); }
 
-    /* --------- Opción múltiple --------- */
+    /* ---- Nivel 1: Opción múltiple ---- */
     function renderMultipleChoice(container){
       const promo = promotionsData[state.activePromotionKey]||{};
       const questions = promo.questions||[];
@@ -743,7 +728,7 @@
       return `✅ Correcto: <b>${correct}</b>.`;
     }
 
-    /* --------- Flashcards (juego 5) --------- */
+    /* ---- Nivel 5: Flashcards (con bloqueo de “Siguiente”) ---- */
     function renderFlashcards(container){
       const promo = promotionsData[state.activePromotionKey]||{}; 
       const flashcards = promo.flashcards||[];
@@ -838,7 +823,7 @@
       renderFlashcards(document.getElementById('game-content')); 
     }
 
-    /* --------- Completar Texto (selección múltiple) --------- */
+    /* ---- Nivel 2: Completar texto (selección) ---- */
     function renderCompleteTextMC(container){
       const promo=promotionsData[state.activePromotionKey]||{};
       const { questions=[], flashcards=[], fillInTheBlanks=[] } = promo;
@@ -889,7 +874,7 @@
       }
     }
 
-    /* --------- FIB --------- */
+    /* ---- Nivel 3: Completar con input ---- */
     function renderFillInTheBlank(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const items=(promo.fillInTheBlanks||[]).slice();
       const { fibIndex=0 } = state.gameData;
@@ -919,7 +904,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.fibIndex=0; renderFillInTheBlank(document.getElementById('game-content')); },800); }
     }
 
-    /* --------- Verdadero/Falso --------- */
+    /* ---- Nivel 4: Verdadero/Falso ---- */
     function renderTrueFalse(container){
       const promo=promotionsData[state.activePromotionKey]||{}; const questions=promo.questions||[];
       const { currentTFIndex=0 } = state.gameData;
@@ -976,7 +961,7 @@
       else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.currentTFIndex=0; renderTrueFalse(document.getElementById('game-content')); },800); }
     }
 
-    /* ========== RESUMEN / DESBLOQUEO ========== */
+    /* =================== RESUMEN =================== */
     function showSummary(container, fromTimeout=false){
       clearTimer();
       const review = state.gameData.review || [];
@@ -1014,13 +999,14 @@
       state.activeGameLevel=0; state.gameData={}; render();
     }
 
-    /* ========== UTILS / NAV ========== */
+    /* =================== UTILS =================== */
     function shuffleArray(a){ const arr=[...a]; for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return arr; }
     function flashRedEffect(){ const o=document.createElement('div'); Object.assign(o.style,{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',background:'rgba(255,0,0,0.25)',zIndex:99999,pointerEvents:'none',transition:'opacity .5s'}); document.body.appendChild(o); setTimeout(()=>o.style.opacity='0',600); setTimeout(()=>o.remove(),900); }
     function goToMenu(){ clearTimer(); state.currentView='menu'; state.activePromotionKey=null; state.activeGameLevel=0; state.gameData={}; render(); }
     function clearAndRender(){ clearTimer(); render(); }
     function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
 
+    // limpiar hotkeys entre vistas
     function removeHotkeys(){
       window._mcHandler && document.removeEventListener('keydown', window._mcHandler);
       window._ctHandler && document.removeEventListener('keydown', window._ctHandler);
