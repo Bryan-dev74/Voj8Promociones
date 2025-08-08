@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Juego de Promociones VOJ8</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="shortcut icon" href="ico.ico" type="image/x-icon">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    :root { --bg-dark:#1a1a1a; --bg-card:#2c2c2c; --gold:#f8b600; --gold-dark:#d89e00; --text-light:#f5f5f5; --text-muted:#a0a0a0; --success:#22c55e; --error:#ef4444; }
+    :root { --bg-dark:#1a1a1a; --bg-card:#2c2c2c; --gold:#f8b600; --gold-dark:#d89e00; --text-light:#f5f5f5; --success:#22c55e; --error:#ef4444; }
     body{font-family:'Inter',sans-serif;background:var(--bg-dark);color:var(--text-light)}
     .card{background:var(--bg-card);border-radius:1rem;border:1px solid rgba(255,255,255,.1);transition:.3s}
     .btn{transition:.3s;border-radius:.5rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
@@ -26,11 +25,17 @@
     .flashcard-back{transform:rotateY(180deg)}
     @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
     .fade-in{animation:fadeIn .4s ease-out forwards}
+    .toggle{display:inline-flex;align-items:center;gap:.5rem}
+    .toggle input{width:44px;height:24px;appearance:none;background:#3f3f46;border-radius:999px;position:relative;outline:none;cursor:pointer}
+    .toggle input:checked{background:var(--gold)}
+    .toggle input::after{content:"";position:absolute;width:18px;height:18px;top:3px;left:3px;background:#fff;border-radius:999px;transition:.2s}
+    .toggle input:checked::after{left:23px}
+    .timer{font-variant-numeric:tabular-nums}
   </style>
 </head>
 <body class="min-h-screen">
   <div class="container mx-auto p-4 md:p-8 max-w-7xl">
-    <header class="text-center mb-10 fade-in">
+    <header class="text-center mb-6 fade-in">
       <img src="logo.png" alt="VOJ8 Logo" class="mx-auto h-16 mb-4">
       <h1 class="text-4xl md:text-5xl font-black">Centro de Entrenamiento de Promociones</h1>
       <p class="text-lg text-gray-400 mt-2">¡Domina cada bono y maximiza tus ganancias!</p>
@@ -39,18 +44,16 @@
   </div>
 
   <script>
-    const SHOW_EXPLANATION = true; // pon en false si no querés explicación breve tras responder
+    const SHOW_EXPLANATION = true;
 
-    /* =======================
-       DATA
-    ======================= */
+    /* ========== DATA (tus promos, sin cambios de contenido) ========== */
     const promotionsData = {
       "Bônus de 1º Depósito + Roda da Fortuna": {
         questions: [
           { question: "¿Qué porcentaje de bono se ofrece en el primer depósito?", answer: "100%" },
           { question: "¿Cuál es el depósito mínimo para participar?", answer: "R$20" },
           { question: "¿Cuál es el bono máximo que se puede recibir?", answer: "R$1.000" },
-          { question: "¿Qué premio adicional se recibe?", answer: "Un giro en la Roda da Fortuna" },
+          { question: "¿Qué premio adicional se recibe?", answer: "Giro en la Roda da Fortuna" },
           { question: "¿Cuál es el rollover para este bono?", answer: "15x" }
         ],
         fillInTheBlanks: [
@@ -350,34 +353,50 @@
       "Momento de Compartilhar": "Comparte y Gana"
     };
 
-    /* =======================
-       STATE / STORAGE
-    ======================= */
+    /* ========== ESTADO / STORAGE ========== */
     let state = {
       currentView:'menu',
       activePromotionKey:null,
       activeGameLevel:0,
       progress:{},
-      gameData:{} // { review: [ {q, correct, selected, ok} ] , ... }
+      gameData:{},
+      hardMode: false,
+      timerId: null,
+      deadline: null
     };
     const mainContent = document.getElementById('main-content');
 
     function initProgress(){
       try{ const saved=localStorage.getItem('voj8GameProgress'); state.progress=saved?JSON.parse(saved):{}; }catch{ state.progress={}; }
       getVisiblePromoKeys().forEach(k=>{ if(typeof state.progress[k]!=='number') state.progress[k]=0; });
+      try{ state.hardMode = localStorage.getItem('voj8HardMode')==='1'; }catch{}
       saveProgress();
     }
-    function saveProgress(){ try{ localStorage.setItem('voj8GameProgress', JSON.stringify(state.progress)); }catch{} }
+    function saveProgress(){ try{ localStorage.setItem('voj8GameProgress', JSON.stringify(state.progress)); localStorage.setItem('voj8HardMode', state.hardMode?'1':'0'); }catch{} }
 
-    /* =======================
-       RENDER
-    ======================= */
+    /* ========== RENDER MENÚ/JUEGO ========== */
     function getVisiblePromoKeys(){ return Object.keys(promotionDisplayNames).filter(k=>!!promotionsData[k]); }
     function render(){ mainContent.innerHTML=''; if(state.currentView==='menu') renderMenu(); else renderGame(); }
 
     function renderMenu(){
       const promoKeys = getVisiblePromoKeys();
       const maxLevel=5;
+
+      const ruleBox = `
+        <div class="card p-4 mb-6">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-yellow-400 mb-1">Reglas</h3>
+              <ul class="text-sm text-gray-300 list-disc pl-5 space-y-1">
+                <li>Para desbloquear una ⭐ y el siguiente nivel debes responder <b>todas</b> las preguntas del juego <b>seguidas y sin errores</b>.</li>
+                <li>Cada juego tiene un <b>temporizador</b>. Si se agota, se considera fallo y <b>no desbloqueas</b> el nivel.</li>
+                <li>Las respuestas son coherentes entre juegos: si dos preguntas son la misma idea, la respuesta correcta es <b>exactamente la misma</b> (sin variantes).</li>
+              </ul>
+            </div>
+            <label class="toggle text-sm"><input type="checkbox" id="hard-toggle" ${state.hardMode?'checked':''} onchange="toggleHardMode(this.checked)"><span>Modo Difícil</span></label>
+          </div>
+        </div>`;
+
       const cardsHTML = promoKeys.map(key=>{
         const displayName=promotionDisplayNames[key];
         const level=state.progress[key]||0;
@@ -391,19 +410,21 @@
           <button onclick="selectPromotion('${key}')" class="btn btn-gold py-2 px-4 mt-2">Entrenar</button>
         </div>`;
       }).join('');
+
       mainContent.innerHTML = `
         <section id="promotion-menu">
-          <div class="flex justify-end mb-6">
+          <div class="flex justify-end mb-3">
             <button onclick="resetProgress()" class="btn bg-gray-700 text-white py-2 px-6 hover:bg-red-500">Reiniciar Historial</button>
           </div>
+          ${ruleBox}
           <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">${cardsHTML}</div>
         </section>`;
     }
+    function toggleHardMode(v){ state.hardMode=v; saveProgress(); }
     function resetProgress(){ getVisiblePromoKeys().forEach(k=>state.progress[k]=0); saveProgress(); render(); }
 
     function renderGame(){
       mainContent.innerHTML = '';
-
       const displayName = promotionDisplayNames[state.activePromotionKey] || state.activePromotionKey || '';
       const level=state.progress[state.activePromotionKey]||0;
       const gameTypes=['Opción Múltiple','Completar Texto (Selección Múltiple)','Completar la Regla','Verdadero/Falso','Tarjetas de Memoria'];
@@ -426,7 +447,12 @@
         <div class="max-w-4xl mx-auto">
           <button onclick="goToMenu()" class="btn bg-gray-700 text-white py-2 px-4 mb-6 hover:bg-gray-600">← Volver al Menú</button>
           <div class="card p-6 md:p-8">
-            <h2 class="text-3xl font-bold mb-6 text-center text-yellow-400">${displayName}</h2>
+            <h2 class="text-3xl font-bold mb-3 text-center text-yellow-400">${displayName}</h2>
+            <div id="timer-row" class="text-center mb-4 ${state.activeGameLevel? '':'hidden'}">
+              <span class="text-sm text-gray-300">Tiempo restante:</span>
+              <span id="timer-el" class="timer font-bold ml-2">--:--</span>
+              ${state.hardMode?'<span class="ml-2 text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">Modo Difícil</span>':''}
+            </div>
             <div id="game-content" class="space-y-4">${state.activeGameLevel===0?list:''}</div>
           </div>
         </div>`;
@@ -434,193 +460,194 @@
 
       if(state.activeGameLevel>0){
         const c=document.getElementById('game-content');
+        // iniciar temporizador para todo el juego
+        setupTimerForLevel();
         if(state.activeGameLevel===1) renderMultipleChoice(c);
         if(state.activeGameLevel===2) renderCompleteTextMC(c);
         if(state.activeGameLevel===3) renderFillInTheBlank(c);
         if(state.activeGameLevel===4) renderTrueFalse(c);
         if(state.activeGameLevel===5) renderFlashcards(c);
+      }else{
+        clearTimer();
       }
     }
 
-    /* =======================
-       TIPADO + CONTEXTO
-    ======================= */
+    /* ========== TEMPORIZADOR ========== */
+    function secsPerItemFor(level){
+      // más estricto en difícil
+      const base = state.hardMode ? {1:18,2:16,3:14,4:10,5:10} : {1:24,2:22,3:20,4:14,5:12};
+      return base[level] || 18;
+    }
+    function setupTimerForLevel(){
+      clearTimer();
+      const promo = promotionsData[state.activePromotionKey] || {};
+      const level=state.activeGameLevel;
+      let items=0;
+      if(level===1) items = (promo.questions||[]).length;
+      if(level===2){ const q=(promo.questions||[]).length, f=(promo.flashcards||[]).length, b=(promo.fillInTheBlanks||[]).length; items=q+f+b; }
+      if(level===3) items = (promo.fillInTheBlanks||[]).length || 3;
+      if(level===4) items = (promo.questions||[]).length || 4;
+      if(level===5) items = (promo.flashcards||[]).length || 4;
+      items = Math.max(items, 3);
+      const totalSecs = Math.max(45, secsPerItemFor(level)*items);
+      state.deadline = Date.now() + totalSecs*1000;
+      state.timerId = setInterval(updateTimerUI, 200);
+      updateTimerUI();
+      document.getElementById('timer-row')?.classList.remove('hidden');
+    }
+    function clearTimer(){ if(state.timerId){ clearInterval(state.timerId); state.timerId=null; } state.deadline=null; }
+    function updateTimerUI(){
+      const el=document.getElementById('timer-el');
+      if(!el || !state.deadline) return;
+      const ms = state.deadline - Date.now();
+      if(ms<=0){ el.textContent='00:00'; clearTimer(); // tiempo agotado -> fallo y resumen
+        state.gameData.mistake = true;
+        showSummary(document.getElementById('game-content'), true);
+        return;
+      }
+      const s = Math.ceil(ms/1000); const m=Math.floor(s/60), ss=String(s%60).padStart(2,'0');
+      el.textContent = `${m}:${ss}`;
+      if(s<=10) el.classList.add('text-red-400'); else el.classList.remove('text-red-400');
+    }
+
+    /* ========== NORMALIZACIÓN / COHERENCIA ========== */
     const percentRe = /^\d+(\.\d+)?%$/i;
     const rolloverRe = /^\d+\s*x$/i;
     const moneyRe = /^r\$/i;
+    const canonMap = [
+      [/^un?\s*giro.*(roda|rueda).*fortuna/i, 'giro en la roda da fortuna'],
+      [/^giro.*(roda|rueda).*fortuna/i, 'giro en la roda da fortuna'],
+      [/^miembro.*telegram/i, 'ser miembro del grupo oficial de telegram'],
+      [/^manual\s+al\s+depositar/i, 'manual al depositar'],
+    ];
+    function canon(t){
+      let s=String(t||'').trim().toLowerCase();
+      s = s.normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^\w%$x\s\.@]/g,'').replace(/\s+/g,' ').trim();
+      canonMap.forEach(([re,rep])=>{ if(re.test(s)) s=rep; });
+      // numeros homogenizados
+      if(percentRe.test(s)) return parseFloat(s);
+      if(rolloverRe.test(s)) return parseFloat(s);
+      if(moneyRe.test(s))   return parseFloat(s.replace(/[^\d]/g,''));
+      return s;
+    }
+    const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
+    const uniqByCanon = (arr)=>{ const seen=new Set(); const out=[]; for(const v of arr){ const k=canon(v); if(!seen.has(k)){ seen.add(k); out.push(v); } } return out; };
 
-    function parseAnswerType(ans){
-      const a=String(ans).trim();
-      if(percentRe.test(a)) return {type:'porcentaje', value:parseFloat(a)};
-      if(rolloverRe.test(a)) return {type:'rollover', value:parseFloat(a)};
-      if(moneyRe.test(a))    return {type:'monto', value:parseFloat(a.replace(/[^\d]/g,''))};
-      if(/^\d+$/.test(a))    return {type:'numero', value:parseFloat(a)};
-      return {type:'texto', value:a};
+    function getAllAnswersForPromo(promoKey){
+      const data = promotionsData[promoKey]||{};
+      const out = [];
+      (data.questions||[]).forEach(q=>out.push(q.answer));
+      (data.fillInTheBlanks||[]).forEach(q=>out.push(q.answer));
+      (data.flashcards||[]).forEach(f=>out.push(f.back));
+      return out;
     }
 
-    const fmtMoney = (n)=>`R$${Number(n).toLocaleString('pt-BR')}`;
+    /* ========== DISTRCTORES (modo normal/difícil) ========== */
+    function closeMoneyOptions(correctInt){
+      // vecinos cercanos para modo difícil
+      const deltas = [Math.round(correctInt*0.05), 50, 100, 200].map(Math.abs);
+      const cand = new Set();
+      for(const d of deltas){
+        cand.add(correctInt+d); cand.add(Math.max(1, correctInt-d));
+      }
+      return Array.from(cand).map(fmtMoney);
+    }
+    function closePercentOptions(p){
+      const pool=[p-2,p-1,p+1,p+2,p+5,p-5].filter(x=>x>0).map(x=>`${x}%`);
+      return uniqByCanon(pool);
+    }
+    function closeRolloverOptions(x){
+      const pool=[x-2,x-1,x+1,x+2].filter(v=>v>0).map(v=>`${v}x`);
+      return uniqByCanon(pool);
+    }
 
     function contextCandidates(promoKey, qText, correct){
       const q=qText.toLowerCase();
-      const {type, value} = parseAnswerType(correct);
+      const c=canon(correct);
 
-      // Contexto por bono (resumen duro para opciones plausibles)
-      if(promoKey.includes('1º depósito')){
-        if(q.includes('porcentaje')) return ['50%','150%','200%'];
-        if(q.includes('depósito mínimo')) return ['R$10','R$50','R$100'];
-        if(q.includes('bono máximo')) return ['R$500','R$1.500','R$2.000'];
-        if(q.includes('premio adicional')) return ['Cashback 5%','Puntos VIP','2 giros en la rueda'];
-        if(q.includes('rollover')) return ['10x','20x','25x'];
-      }
-      if(promoKey.includes('Segundo Depósito')){
-        if(q.includes('depósito mínimo')) return ['R$20','R$100','R$200'];
-        if(q.includes('bono de segundo depósito puede llegar')) return [fmtMoney(1055), fmtMoney(2000), fmtMoney(10000)];
-        if(q.includes('bono máximo')) return [fmtMoney(1055), fmtMoney(2000), fmtMoney(10000)];
-        if(q.includes('rollover')) return ['3x','10x','15x'];
-        if(q.includes('activa')) return ['Automáticamente','Contactando soporte','Por Telegram'];
-      }
-      if(promoKey.includes('Diário') || promoKey.includes('Diario')){
-        if(q.includes('porcentaje')) return ['5%','15%','20%'];
-        if(q.includes('mínimo por recarga')) return ['R$5','R$20','R$50'];
-        if(q.includes('máximo por día')) return ['R$50','R$88','R$100'];
-        if(q.includes('rollover')) return ['0x','3x','5x'];
-        if(q.includes('requisito')||q.includes('grupo')) return ['Hacer una apuesta deportiva','Depositar con USDT','Ser VIP'];
-      }
-      if(promoKey.includes('Check-in')){
-        if(q.includes('cuántos días')) return ['7','5','15'];
-        if(q.includes('depósito mínimo')) return ['R$10','R$30','R$50'];
-        if(q.includes('rollover')) return ['1x','5x','10x'];
-        if(q.includes('omite')||q.includes('faltar')) return ['Se pierde solo el bono de ese día','Se puede continuar al día siguiente','Se baja un nivel'];
-      }
-      if(promoKey.includes('Instantâneo')){
-        if(q.includes('apuestas califican')) return ['Solo slots','Solo apuestas deportivas','Solo poker'];
-        if(q.includes('porcentaje máximo')) return ['0.5%','1%','1.2%'];
-        if(q.includes('hora')) return ['A la medianoche','Al instante','A las 18:00 del día siguiente'];
-      }
-      if(promoKey.includes('Secreto')){
-        if(q.includes('juegos aplica')) return ['Poker','Apuestas deportivas','Todos los juegos'];
-        if(q.includes('porcentaje')) return ['1%','2%','5%'];
-        if(q.includes('pérdida mínima')) return ['R$20','R$50','R$100'];
-        if(q.includes('rollover')) return ['3x','5x','Sin rollover'];
-      }
-      if(promoKey.includes('USDT')){
-        if(q.includes('porcentaje')) return ['0.1%','0.5%','1%'];
-        if(q.includes('límite')) return ['Sí, R$100 por día','Sí, R$1.000 en total','Sí, depende del nivel VIP'];
-      }
-      if(promoKey.includes('VIP')){
-        if(q.includes('niveles')) return ['25','40','100'];
-        if(q.includes('reclamar')) return ['1 día','3 días','10 días'];
-      }
-      if(promoKey.includes('Indicação')){
-        if(q.includes('depósito mínimo')) return ['R$10','R$50','R$100'];
-        if(q.includes('cuánto recibes')) return ['R$5','R$15','R$20'];
-        if(q.includes('rollover') && q.includes('bono directo')) return ['1x','5x','10x'];
-        if(q.includes('hasta qué nivel')) return ['Solo directos','Hasta el tercer nivel','No hay comisiones por nivel'];
-        if(q.includes('slots & pesca')) return ['0.10%','0.30%','1.00%'];
-        if(q.includes('comisión por depósito')) return ['0.1%','0.5%','1%'];
-        if(q.includes('rollover para la comisión')) return ['2x','3x','4x'];
-      }
-      if(promoKey.includes('Cumple')){
-        if(q.includes('porcentaje')) return ['50%','75%','200%'];
-        if(q.includes('cupón')||q.includes('valor máximo')) return [fmtMoney(188), fmtMoney(588), fmtMoney(1088)];
-        if(q.includes('rollover')) return ['1x','5x','15x'];
-      }
-      if(promoKey.includes('Envelopes')){
-        if(q.includes('depósito mínimo')) return ['R$10','R$50','No hay mínimo'];
-        if(q.includes('veces al día')) return ['1','2','3'];
-        if(q.includes('premio máximo')) return [fmtMoney(888), fmtMoney(1088), fmtMoney(5000)];
-      }
-      if(promoKey.includes('Código Premiado')){
-        if(q.includes('depósito mínimo')) return ['R$10','R$50','R$100'];
-        if(q.includes('rollover')) return ['1x','5x','10x'];
-        if(q.includes('enviar')) return ['El código','Un video','El ID de la apuesta'];
-      }
-      if(promoKey.includes('OVO PREMIADO 777')){
-        if(q.includes('rango del premio')) return ['R$7 a R$77','R$77 a R$777','R$1 a R$777'];
-        if(q.includes('depósito mínimo')) return ['R$10','R$30','R$50'];
-        if(q.includes('acción')) return ['Contactar soporte','Publicar en redes sociales','Jugar en un slot específico'];
-        if(q.includes('rollover')) return ['3x','5x','10x'];
-      }
-      if(promoKey.includes('Prêmios PG')){
-        if(q.includes('requisito de apuestas')) return [fmtMoney(500), fmtMoney(2000), fmtMoney(5000)];
-        if(q.includes('ganadores diarios')) return ['100','500','1000'];
-        if(q.includes('premio fijo')) return [fmtMoney(10), fmtMoney(25), fmtMoney(100)];
-        if(q.includes('rollover')) return ['3x','5x','10x'];
-      }
-      if(promoKey.includes('Ganhos')){
-        if(q.includes('depósito mínimo')) return ['R$10','R$50','R$100'];
-        if(q.includes('ganancia mínima')) return ['R$10','R$50','R$100'];
-        if(q.includes('monto del bono')) return ['R$5','R$20','R$50'];
-        if(q.includes('rollover')) return ['3x','5x','10x'];
-      }
-      if(promoKey.includes('Ovo de Ouro')){
-        if(q.includes('acciones')||q.includes('necesarias')) return ['Depositar y apostar','Ser VIP y unirse al grupo','Seguir en redes y compartir'];
-        if(q.includes('premio máximo')) return [fmtMoney(88), fmtMoney(188), fmtMoney(8888)];
-      }
-      if(promoKey.includes('Compartilhar')){
-        if(q.includes('facebook')) return ['R$1','R$2','R$10'];
-        if(q.includes('instagram')) return ['R$1','R$2','R$10'];
-        if(q.includes('tiempo')||q.includes('visible')) return ['1 hora','24 horas','48 horas'];
-      }
-
-      // Fallback por tipo:
-      if(type==='monto'){
-        const pool=[10,20,30,40,50,77,88,100,200,500,1000,2000,5555,8888];
-        return pool.filter(v=>v!==value).slice(0,3).map(v=>fmtMoney(v));
-      }
-      if(type==='porcentaje'){ const p=[1,3,5,10,15,20,25,50,100]; return p.filter(v=>v!==value).slice(0,3).map(v=>`${v}%`); }
-      if(type==='rollover'){ const r=[1,2,3,4,5,10,15,20,30]; return r.filter(v=>v!==value).slice(0,3).map(v=>`${v}x`); }
-      if(type==='numero'){ const n=[1,2,3,4,5,7,10,12,15,20]; return n.filter(v=>v!==value).slice(0,3).map(String); }
-      return null;
-    }
-
-    function buildOptionsForQuestion(promoKey, qObj){
-      const base = [qObj.answer];
-      const ctx = contextCandidates(promoKey, qObj.question, qObj.answer) || [];
-      let opts = base.concat(ctx).slice(0,4);
-      while(opts.length<4){ opts.push('N/A '+Math.floor(Math.random()*100)); }
-      return shuffleArray(opts);
-    }
-
-    // Para Completar-Texto, si el enunciado tiene R$ / % / x y la respuesta es numérica (p. ej. "5555"),
-    // formateamos las opciones correctamente (R$5.555, 10%, 5x, etc) y generamos distractores cercanos.
-    function buildOptionsForFill(text, answer, promoKey){
-      const hasMoney = /r\$\s*__/i.test(text) || /r\$\s*[\s]*__/.test(text);
-      const hasPercent = /__\s*%/.test(text);
-      const hasRollover = /__\s*x/.test(text);
-
-      let normalizedCorrect = String(answer);
-      let correctDisplay = answer;
-
-      if(hasMoney && /^\d+$/.test(answer)) { correctDisplay = fmtMoney(answer); }
-      if(hasPercent && /^\d+(\.\d+)?$/.test(answer)) { correctDisplay = `${answer}%`; }
-      if(hasRollover && /^\d+$/.test(answer)) { correctDisplay = `${answer}x`; }
-
-      // Base + context
-      let ctx = contextCandidates(promoKey, text, correctDisplay) || [];
-
-      // Si el contexto no trajo alternativas válidas, fabricamos cercanas
-      if(ctx.length===0){
-        if(hasMoney && /^\d+$/.test(answer)){
-          const v = parseInt(answer,10);
-          let pool = [1000,2000,5000,8888,1055,777];
-          pool = pool.filter(x=>x!==v).slice(0,3);
-          ctx = pool.map(fmtMoney);
-        }else if(hasPercent){
-          const v = parseFloat(answer); const pool=[1,3,5,10,15,20,25,50,100].filter(x=>x!==v).slice(0,3); ctx = pool.map(x=>`${x}%`);
-        }else if(hasRollover){
-          const v = parseInt(answer,10); const pool=[1,3,4,5,10,15,20].filter(x=>x!==v).slice(0,3); ctx = pool.map(x=>`${x}x`);
+      // si es numérico, ajustar por modo difícil
+      if(typeof c==='number'){
+        if(percentRe.test(correct)){ // porcentaje
+          return state.hardMode ? closePercentOptions(c) : ['5%','10%','15%','20%','25%','50%','100%'].filter(v=>canon(v)!==c);
+        }
+        if(rolloverRe.test(correct)){ // rollover
+          return state.hardMode ? closeRolloverOptions(c) : ['1x','3x','5x','10x','15x','20x','30x'].filter(v=>canon(v)!==c);
+        }
+        if(moneyRe.test(correct)){ // monto
+          const near = state.hardMode ? closeMoneyOptions(c) : [500,1000,1500,2000,5555,8888].map(fmtMoney);
+          return near.filter(v=>canon(v)!==c);
         }
       }
 
-      const options = shuffleArray([correctDisplay, ...ctx].slice(0,4));
+      // TEXTUALES: propuestas plausibles (y en difícil, más “parecidas” pero no sinónimas)
+      const textCands = [];
+      if(q.includes('premio adicional')){
+        textCands.push('Cashback 5%','Puntos VIP','Cupón sorpresa'); // no duplicamos “giro…”
+      }else if(q.includes('activa')||q.includes('accion')||q.includes('acción')){
+        textCands.push('Automáticamente','Contactando soporte','Por Telegram');
+      }else if(q.includes('apuestas califican')){
+        textCands.push('Solo slots','Solo apuestas deportivas','Solo poker');
+      }else if(q.includes('enviar')){
+        textCands.push('El código','Un video','El ID de la apuesta');
+      }else if(q.includes('requisito principal')||q.includes('grupo')){
+        textCands.push('Hacer una apuesta deportiva','Depositar con USDT','Ser VIP');
+      }
+      if(state.hardMode){
+        // variantes “parecidas” pero NO sinónimas del correcto
+        if(canon(correct)==='manual al depositar'){
+          textCands.push('Automático al depositar','Manual después de depositar');
+        }
+      }
+      return uniqByCanon(textCands).filter(v=>canon(v)!==c);
+    }
+
+    function siblingTextDistractors(promoKey, correct){
+      const pool = getAllAnswersForPromo(promoKey)
+        .map(String)
+        .filter(x=>canon(x)!==canon(correct) && !percentRe.test(x) && !rolloverRe.test(x) && !moneyRe.test(x));
+      return uniqByCanon(pool).slice(0,3);
+    }
+
+    function ensureFour(opts, promoKey, qText, correct){
+      let out = uniqByCanon(opts).filter(v=>canon(v)!==canon(correct));
+      while(out.length<3){ // primero hermano textual
+        const sib = siblingTextDistractors(promoKey, correct).find(v=>!out.some(o=>canon(o)===canon(v)));
+        if(sib) out.push(sib); else break;
+      }
+      // relleno de emergencia coherente
+      while(out.length<3){
+        const fallback = ['Telegram','Depósito','Cashback','VIP','Premio','Apuesta','Rollover','Requisito','Automático','Manual'].find(w=>!out.includes(w) && canon(w)!==canon(correct));
+        if(!fallback) break; out.push(fallback);
+      }
+      // + correcto y barajar
+      out = uniqByCanon([correct, ...out]).slice(0,4);
+      return shuffleArray(out);
+    }
+
+    function buildOptionsForQuestion(promoKey, qObj){
+      const ctx = contextCandidates(promoKey, qObj.question, qObj.answer) || [];
+      return ensureFour(ctx, promoKey, qObj.question, qObj.answer);
+    }
+
+    function buildOptionsForFill(text, answer, promoKey){
+      const hasMoney = /r\$\s*__/.test(text);
+      const hasPercent = /__\s*%/.test(text);
+      const hasRollover = /__\s*x/.test(text);
+      let correctDisplay = answer;
+      if(hasMoney && /^\d+$/.test(answer)) correctDisplay = fmtMoney(answer);
+      if(hasPercent && /^\d+(\.\d+)?$/.test(answer)) correctDisplay = `${answer}%`;
+      if(hasRollover && /^\d+$/.test(answer)) correctDisplay = `${answer}x`;
+      const ctx = contextCandidates(promoKey, text, correctDisplay) || [];
+      const options = ensureFour(ctx, promoKey, text, correctDisplay);
       return { options, correctDisplay };
     }
 
-    /* =======================
-       GAME RENDERS/LOGIC
-    ======================= */
-    function ensureReview(){ if(!state.gameData.review) state.gameData.review = []; }
+    /* ========== LÓGICA DE JUEGOS (modo perfecto + timer) ========== */
+    function startGame(level){
+      state.activeGameLevel=level;
+      state.gameData={ review:[], mistake:false, currentQuestionIndex:0, completeIndex:0, fibIndex:0, currentTFIndex:0, currentTFShown:null, currentCardIndex:0, selfCheck:false };
+      render();
+    }
 
     function renderMultipleChoice(container){
       const promo = promotionsData[state.activePromotionKey]||{};
@@ -628,10 +655,8 @@
       const { currentQuestionIndex=0 } = state.gameData;
       if(!questions.length){ showSummary(container); return; }
       if(currentQuestionIndex>=questions.length){ showSummary(container); return; }
-
       const q=questions[currentQuestionIndex];
       const options = buildOptionsForQuestion(state.activePromotionKey, q);
-
       container.innerHTML = `
         <p class="text-xl text-gray-300 mb-1">Pregunta ${currentQuestionIndex+1} de ${questions.length}</p>
         <h3 class="text-2xl font-semibold mb-4">${q.question}</h3>
@@ -640,49 +665,39 @@
         </div>
         <div id="mc-explain" class="text-sm text-gray-400"></div>`;
     }
-
     function checkMultipleChoiceAnswer(button, selected){
-      const promo=promotionsData[state.activePromotionKey];
-      const { currentQuestionIndex=0 } = state.gameData;
-      const qObj = promo.questions[currentQuestionIndex];
+      const promo=promotionsData[state.activePromotionKey]; const { currentQuestionIndex=0 } = state.gameData; const qObj = promo.questions[currentQuestionIndex];
       const correct = qObj.answer;
       document.querySelectorAll('.option-btn').forEach(b=>b.disabled=true);
       const explain = document.getElementById('mc-explain');
-      const ok = selected===correct;
-
-      ensureReview();
+      const ok = canon(selected)===canon(correct);
       state.gameData.review.push({ q:qObj.question, correct, selected, ok });
-
       if(ok){
-        button.classList.add('correct'); confettiEffect();
-        if(SHOW_EXPLANATION && explain){ explain.innerHTML = buildExplanation(qObj, correct); }
-        setTimeout(()=>{ state.gameData.currentQuestionIndex=(currentQuestionIndex||0)+1; renderMultipleChoice(document.getElementById('game-content')); },900);
+        button.classList.add('correct'); if(SHOW_EXPLANATION && explain) explain.innerHTML = buildExplanation(qObj, correct);
+        setTimeout(()=>{ state.gameData.currentQuestionIndex=currentQuestionIndex+1; renderMultipleChoice(document.getElementById('game-content')); },700);
       }else{
-        button.classList.add('incorrect');
-        document.querySelectorAll('.option-btn').forEach(b=>{ if(b.innerText===correct) b.classList.add('correct'); });
+        state.gameData.mistake=true; button.classList.add('incorrect');
+        document.querySelectorAll('.option-btn').forEach(b=>{ if(canon(b.innerText)===canon(correct)) b.classList.add('correct'); });
         flashRedEffect(); if(explain) explain.innerHTML='';
-        setTimeout(()=>{ let prev=(currentQuestionIndex||0)-1; state.gameData.currentQuestionIndex=prev<0?0:prev; renderMultipleChoice(document.getElementById('game-content')); },950);
+        setTimeout(()=>{ state.gameData.currentQuestionIndex=0; renderMultipleChoice(document.getElementById('game-content')); },800);
       }
     }
-
     function buildExplanation(q, correct){
       const lc=q.question.toLowerCase();
-      if(lc.includes('depósito mínimo')) return `📌 El mínimo establecido para esta promo es <b>${correct}</b>.`;
+      if(lc.includes('depósito mínimo')) return `📌 El mínimo es <b>${correct}</b>.`;
       if(lc.includes('porcentaje')) return `📌 El porcentaje oficial es <b>${correct}</b>.`;
       if(lc.includes('bono máximo')||lc.includes('premio máximo')) return `📌 El máximo permitido es <b>${correct}</b>.`;
       if(lc.includes('hora')) return `📌 El pago se programa a <b>${correct}</b>.`;
       if(lc.includes('rollover')) return `📌 El rollover definido es <b>${correct}</b>.`;
-      if(lc.includes('acciones')||lc.includes('acción')) return `📌 Para participar se requiere <b>${correct}</b>.`;
+      if(lc.includes('acción')||lc.includes('activa')) return `📌 Se participa mediante <b>${correct}</b>.`;
       return `✅ Correcto: <b>${correct}</b>.`;
     }
 
     function renderFlashcards(container){
-      const promo = promotionsData[state.activePromotionKey]||{};
-      const flashcards = promo.flashcards||[];
+      const promo = promotionsData[state.activePromotionKey]||{}; const flashcards = promo.flashcards||[];
       const { currentCardIndex=0, selfCheck=false } = state.gameData;
       if(!flashcards.length){ showSummary(container); return; }
       if(currentCardIndex>=flashcards.length){ showSummary(container); return; }
-
       const card=flashcards[currentCardIndex];
       const hint = (promo.questions && promo.questions[currentCardIndex]) ? promo.questions[currentCardIndex].question : '';
       container.innerHTML = `
@@ -710,32 +725,27 @@
     }
     function flipCard(){ const fc=document.getElementById('flashcard'); if(fc){ fc.classList.toggle('is-flipped'); state.gameData.selfCheck=!state.gameData.selfCheck; } }
     function checkFlashcardSelfCheck(){
-      const promo=promotionsData[state.activePromotionKey]||{}; const f=promo.flashcards||[];
-      const { currentCardIndex=0 } = state.gameData;
-      const input=document.getElementById('flashcard-input'); const fb=document.getElementById('flashcard-feedback');
-      if(!input||!fb||!f[currentCardIndex]) return;
-      const ok = normalizeText(input.value)===normalizeText(f[currentCardIndex].back);
-      fb.textContent = ok?'¡Correcto!':'Sigue intentando'; fb.style.color=ok?'var(--success)':'var(--error)'; if(ok) confettiEffect();
-      ensureReview(); state.gameData.review.push({ q:`Flashcard: ${f[currentCardIndex].front}`, correct:f[currentCardIndex].back, selected:input.value, ok });
+      const promo=promotionsData[state.activePromotionKey]||{}; const f=promo.flashcards||[]; const { currentCardIndex=0 } = state.gameData;
+      const input=document.getElementById('flashcard-input'); const fb=document.getElementById('flashcard-feedback'); if(!input||!fb||!f[currentCardIndex]) return;
+      const ok = canon(input.value)===canon(f[currentCardIndex].back);
+      fb.textContent = ok?'¡Correcto!':'Sigue intentando'; fb.style.color=ok?'var(--success)':'var(--error)';
+      state.gameData.review.push({ q:`Flashcard: ${f[currentCardIndex].front}`, correct:f[currentCardIndex].back, selected:input.value, ok });
+      if(!ok){ state.gameData.mistake=true; }
     }
     function nextFlashcard(){ const {currentCardIndex=0}=state.gameData; state.gameData.currentCardIndex=currentCardIndex+1; state.gameData.selfCheck=false; renderFlashcards(document.getElementById('game-content')); }
 
     function renderCompleteTextMC(container){
       const promo=promotionsData[state.activePromotionKey]||{};
       const { questions=[], flashcards=[], fillInTheBlanks=[] } = promo;
-
       let all=[];
       fillInTheBlanks.forEach(q=>all.push({text:q.text, answer:q.answer}));
-      questions.forEach(q=>{ all.push({text:`La respuesta correcta a: '${q.question}' es __.`, answer:q.answer}); });
+      questions.forEach(q=>all.push({text:`La respuesta correcta a: '${q.question}' es __.`, answer:q.answer}));
       flashcards.forEach(f=>all.push({text:`La respuesta a la tarjeta: '${f.front}' es __.`, answer:f.back}));
-
       const { completeIndex=0 } = state.gameData;
       if(!all.length){ showSummary(container); return; }
       if(completeIndex>=all.length){ showSummary(container); return; }
-
       const item=all[completeIndex];
       const { options, correctDisplay } = buildOptionsForFill(item.text, item.answer, state.activePromotionKey);
-
       container.innerHTML = `
         <p class="text-xl text-gray-300 mb-4">Completa el texto seleccionando la opción correcta</p>
         <p class="text-2xl leading-relaxed text-center mb-6">${item.text.replace('__','<span class="underline text-yellow-400">____</span>')}</p>
@@ -743,7 +753,6 @@
           ${options.map(opt=>`<button class="btn btn-gold py-2 px-6" onclick="checkCompleteTextMC(this,'${opt.replace(/'/g,"\\'")}','${correctDisplay.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
         </div>
         <div id="complete-feedback" class="text-center text-sm text-gray-400 h-6"></div>`;
-      state.gameData._ct_correctDisplay = correctDisplay; // para resumen bonito
       state.gameData.completeCurrentAnswer = correctDisplay;
       state.gameData.completeIndex = completeIndex;
     }
@@ -751,23 +760,22 @@
       const correct = state.gameData.completeCurrentAnswer || correctShown;
       const fb=document.getElementById('complete-feedback');
       document.querySelectorAll('.btn-gold').forEach(b=>b.disabled=true);
-      const ok = normalizeText(selected)===normalizeText(correct);
-      fb.innerHTML = ok && SHOW_EXPLANATION ? `✅ Correcto: <b>${correct}</b>` : (ok?'':'Incorrecto. Retrocedes una pregunta.');
-      fb.style.color = ok ? 'var(--success)' : 'var(--error)';
-
-      ensureReview();
-      const idx = state.gameData.completeIndex||0;
-      // Guardamos el enunciado mostrado
+      const ok = canon(selected)===canon(correct);
       const enunciado = document.querySelector('#game-content p.text-2xl')?.innerText || '';
       state.gameData.review.push({ q: enunciado.replace(/\s+/g,' ').trim(), correct, selected, ok });
-
-      if(ok){ confettiEffect(); setTimeout(()=>{ state.gameData.completeIndex=idx+1; renderCompleteTextMC(document.getElementById('game-content')); },800); }
-      else{ flashRedEffect(); setTimeout(()=>{ let prev=idx-1; state.gameData.completeIndex=prev<0?0:prev; renderCompleteTextMC(document.getElementById('game-content')); },900); }
+      if(ok){
+        if(SHOW_EXPLANATION) fb.innerHTML = `✅ Correcto: <b>${correct}</b>`;
+        fb.style.color='var(--success)';
+        setTimeout(()=>{ state.gameData.completeIndex=(state.gameData.completeIndex||0)+1; renderCompleteTextMC(document.getElementById('game-content')); },700);
+      }else{
+        state.gameData.mistake=true;
+        fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect();
+        setTimeout(()=>{ state.gameData.completeIndex=0; renderCompleteTextMC(document.getElementById('game-content')); },800);
+      }
     }
 
     function renderFillInTheBlank(container){
-      const promo=promotionsData[state.activePromotionKey]||{};
-      const items=(promo.fillInTheBlanks||[]).slice();
+      const promo=promotionsData[state.activePromotionKey]||{}; const items=(promo.fillInTheBlanks||[]).slice();
       const { fibIndex=0 } = state.gameData;
       if(!items.length){ showSummary(container); return; }
       if(fibIndex>=items.length){ showSummary(container); return; }
@@ -782,60 +790,57 @@
     }
     function checkFIB(){
       const input=document.getElementById('fib-input'); const fb=document.getElementById('fib-feedback');
-      const ok = normalizeText(input.value)===normalizeText(String(state.gameData.fibAnswer||'')); fb.textContent= ok?'¡Correcto!':'Intenta de nuevo'; fb.style.color= ok?'var(--success)':'var(--error)';
-      ensureReview();
+      const ok = canon(input.value)===canon(String(state.gameData.fibAnswer||'')); 
       const enunciado = document.querySelector('#game-content p.text-2xl')?.innerText || '';
       state.gameData.review.push({ q: enunciado.replace(/\s+/g,' ').trim(), correct: state.gameData.fibAnswer, selected: input.value, ok });
-      if(ok){ confettiEffect(); setTimeout(()=>{ state.gameData.fibIndex=(state.gameData.fibIndex||0)+1; renderFillInTheBlank(document.getElementById('game-content')); },800); }
+      if(ok){ fb.textContent='¡Correcto!'; fb.style.color='var(--success)'; setTimeout(()=>{ state.gameData.fibIndex=(state.gameData.fibIndex||0)+1; renderFillInTheBlank(document.getElementById('game-content')); },700); }
+      else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.fibIndex=0; renderFillInTheBlank(document.getElementById('game-content')); },800); }
     }
 
     function renderTrueFalse(container){
-      const promo=promotionsData[state.activePromotionKey]||{};
-      const questions=promo.questions||[];
+      const promo=promotionsData[state.activePromotionKey]||{}; const questions=promo.questions||[];
       const { currentTFIndex=0 } = state.gameData;
       if(!questions.length){ showSummary(container); return; }
       if(currentTFIndex>=questions.length){ showSummary(container); return; }
       const q=questions[currentTFIndex];
       const ctx=contextCandidates(state.activePromotionKey, q.question, q.answer)||[];
-      const wrong = ctx[0] || q.answer;
-      const isTrue = Math.random()>0.5;
-      state.gameData.currentTFIsTrue=isTrue;
+      const wrong = ctx[0] || (q.options?.find(o=>canon(o)!==canon(q.answer)) || q.answer);
+
+      const showCorrect = (currentTFIndex % 2 === 0);
+      const shown = showCorrect ? q.answer : wrong;
+      state.gameData.currentTFShown = shown;
 
       container.innerHTML = `
         <p class="text-xl text-gray-300 mb-4">¿La siguiente afirmación es verdadera o falsa?</p>
-        <div class="card p-6 mb-4 text-center text-2xl">${q.question} <br><span class='font-bold text-yellow-400'>${isTrue?q.answer:wrong}</span></div>
+        <div class="card p-6 mb-4 text-center text-2xl">${q.question} <br><span class='font-bold text-yellow-400'>${shown}</span></div>
         <div class="flex justify-center gap-4">
-          <button onclick="checkTrueFalse(true,'${q.question.replace(/'/g,"\\'")}','${q.answer.replace(/'/g,"\\'")}','${(isTrue?q.answer:wrong).replace(/'/g,"\\'")}')" class="btn btn-gold py-3 px-8">Verdadero</button>
-          <button onclick="checkTrueFalse(false,'${q.question.replace(/'/g,"\\'")}','${q.answer.replace(/'/g,"\\'")}','${(isTrue?q.answer:wrong).replace(/'/g,"\\'")}')" class="btn bg-gray-600 py-3 px-8">Falso</button>
+          <button onclick="checkTrueFalse(true,'${q.question.replace(/'/g,"\\'")}','${q.answer.replace(/'/g,"\\'")}')" class="btn btn-gold py-3 px-8">Verdadero</button>
+          <button onclick="checkTrueFalse(false,'${q.question.replace(/'/g,"\\'")}','${q.answer.replace(/'/g,"\\'")}')" class="btn bg-gray-600 py-3 px-8">Falso</button>
         </div>
         <div id="tf-feedback" class="text-center text-sm text-gray-400 h-6"></div>`;
     }
-    function checkTrueFalse(choice, qText, correct, shown){
-      const { currentTFIsTrue, currentTFIndex=0 } = state.gameData;
+    function checkTrueFalse(choice, qText, correct){
+      const { currentTFIndex=0, currentTFShown } = state.gameData;
       const fb=document.getElementById('tf-feedback');
-      const ok = choice===currentTFIsTrue;
-      if(ok){ fb.textContent='¡Correcto!'; fb.style.color='var(--success)'; confettiEffect(); }
-      else{ fb.textContent='Incorrecto. Retrocedes una pregunta.'; fb.style.color='var(--error)'; flashRedEffect(); }
-      ensureReview();
-      state.gameData.review.push({ q:`${qText} → ${shown}`, correct, selected: choice?'Verdadero':'Falso', ok });
-      setTimeout(()=>{
-        if(ok){ state.gameData.currentTFIndex=(currentTFIndex||0)+1; }
-        else{ let prev=(currentTFIndex||0)-1; state.gameData.currentTFIndex=prev<0?0:prev; }
-        renderTrueFalse(document.getElementById('game-content'));
-      },850);
+      const isTrue = canon(currentTFShown)===canon(correct);
+      const ok = choice===isTrue;
+      state.gameData.review.push({ q:`${qText} → ${currentTFShown}`, correct, selected: choice?'Verdadero':'Falso', ok });
+      if(ok){ fb.textContent='¡Correcto!'; fb.style.color='var(--success)'; setTimeout(()=>{ state.gameData.currentTFIndex=currentTFIndex+1; renderTrueFalse(document.getElementById('game-content')); },700); }
+      else{ state.gameData.mistake=true; fb.textContent='Incorrecto. Se reinicia el juego.'; fb.style.color='var(--error)'; flashRedEffect(); setTimeout(()=>{ state.gameData.currentTFIndex=0; renderTrueFalse(document.getElementById('game-content')); },800); }
     }
 
-    /* =======================
-       RESUMEN DE RESPUESTAS
-    ======================= */
-    function showSummary(container){
+    /* ========== RESUMEN / DESBLOQUEO ========== */
+    function showSummary(container, fromTimeout=false){
+      clearTimer();
       const review = state.gameData.review || [];
       const total = review.length;
       const aciertos = review.filter(r=>r.ok).length;
+      const perfecto = !state.gameData.mistake && !fromTimeout && total>0 && aciertos===total;
+
       container.innerHTML = `
         <div class="card p-6 md:p-8">
           <h3 class="text-2xl font-bold mb-4 text-yellow-400 text-center">Resumen del juego</h3>
-          <p class="text-center mb-4">Aciertos: <b>${aciertos}</b> / ${total}</p>
+          <p class="text-center mb-2">Aciertos: <b>${aciertos}</b> / ${total} ${perfecto ? '✅ (Perfecto)' : (fromTimeout ? '⏰ Tiempo agotado' : '❌ Hubo errores')}</p>
           <div class="space-y-3 max-h-[60vh] overflow-auto pr-2">
             ${review.map((r,i)=>`
               <div class="p-3 rounded ${r.ok?'bg-green-900/30':'bg-red-900/25'}">
@@ -845,28 +850,30 @@
                 <div class="text-sm">Correcta: <b>${r.correct}</b></div>
               </div>`).join('')}
           </div>
-          <div class="text-center mt-6">
-            <button class="btn btn-gold py-2 px-6" onclick="finishGame()">Terminar y volver al menú</button>
+          <div class="text-center mt-6 flex justify-center gap-3">
+            <button class="btn bg-gray-700 text-white py-2 px-6" onclick="retryGame()">Reintentar</button>
+            <button class="btn btn-gold py-2 px-6" onclick="finishGame(${perfecto?'true':'false'})">${perfecto?'Terminar y desbloquear':'Terminar (sin desbloquear)'}</button>
           </div>
         </div>`;
     }
-    function finishGame(){ completeLevel(); }
+    function retryGame(){ startGame(state.activeGameLevel); }
+    function finishGame(canUnlock){
+      if(canUnlock){
+        if(state.progress[state.activePromotionKey] < state.activeGameLevel){
+          state.progress[state.activePromotionKey]=state.activeGameLevel;
+          saveProgress();
+        }
+      }
+      state.activeGameLevel=0; state.gameData={}; render();
+    }
 
-    /* =======================
-       UTILS
-    ======================= */
+    /* ========== UTILS / NAV ========== */
     function shuffleArray(a){ const arr=[...a]; for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return arr; }
-    function normalizeText(t){ return String(t||'').trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/[^a-z0-9%áéíóúüñç\s]/gi,''); }
     function flashRedEffect(){ const o=document.createElement('div'); Object.assign(o.style,{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',background:'rgba(255,0,0,0.25)',zIndex:99999,pointerEvents:'none',transition:'opacity .5s'}); document.body.appendChild(o); setTimeout(()=>o.style.opacity='0',600); setTimeout(()=>o.remove(),900); }
-    function confettiEffect(){ /* stub visual */ }
-
-    /* =======================
-       NAV FLOW
-    ======================= */
-    function goToMenu(){ state.currentView='menu'; state.activePromotionKey=null; state.activeGameLevel=0; state.gameData={}; render(); }
-    function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={review:[]}; render(); }
-    function startGame(level){ state.activeGameLevel=level; state.gameData={review:[]}; render(); }
-    function completeLevel(){ if(state.progress[state.activePromotionKey] < state.activeGameLevel){ state.progress[state.activePromotionKey]=state.activeGameLevel; } saveProgress(); state.activeGameLevel=0; render(); }
+    function goToMenu(){ clearTimer(); state.currentView='menu'; state.activePromotionKey=null; state.activeGameLevel=0; state.gameData={}; render(); }
+    function clearAndRender(){ clearTimer(); render(); }
+    function selectPromotion(key){ if(!promotionsData[key]){ alert('Promoción sin datos aún.'); return; } state.currentView='game'; state.activePromotionKey=key; state.activeGameLevel=0; state.gameData={}; clearAndRender(); }
+    function clearTimer(){ if(state.timerId){ clearInterval(state.timerId); state.timerId=null; } state.deadline=null; }
 
     document.addEventListener('DOMContentLoaded',()=>{ initProgress(); render(); });
   </script>
